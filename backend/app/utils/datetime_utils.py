@@ -1,3 +1,85 @@
+import re
+import logging
+
+def normalize_datetime(text: str) -> dict | None:
+    """
+    Convert natural language date/time expressions to normalized values.
+    Returns dict with 'date' (YYYY-MM-DD) and 'time' (HH:MM) or None values.
+    """
+    text = text.lower().strip()
+    today = date.today()
+    parsed_date = _parse_relative_day(text)
+    if not parsed_date:
+        parsed_date = _parse_weekday(text)
+    parsed_time = _parse_time(text)
+    result = {"date": parsed_date.isoformat() if parsed_date else None, "time": parsed_time}
+    logging.debug("Normalized datetime: %s", result)
+    return result
+
+def _parse_relative_day(text: str) -> date | None:
+    today = date.today()
+    if re.search(r"\btoday\b", text):
+        return today
+    if re.search(r"\btomorrow\b", text):
+        return today.replace(day=today.day + 1)
+    if re.search(r"day after tomorrow", text):
+        return today.replace(day=today.day + 2)
+    return None
+
+def _parse_weekday(text: str) -> date | None:
+    weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    today = date.today()
+    for i, wd in enumerate(weekdays):
+        # next monday, next friday, etc.
+        if f"next {wd}" in text:
+            days_ahead = (i - today.weekday() + 7) % 7
+            days_ahead = days_ahead or 7
+            return today.replace(day=today.day + days_ahead)
+        # this monday, this friday, etc.
+        if f"this {wd}" in text:
+            days_ahead = (i - today.weekday()) % 7
+            return today.replace(day=today.day + days_ahead)
+        # just 'monday', 'friday', etc.
+        if re.search(rf"\b{wd}\b", text):
+            days_ahead = (i - today.weekday() + 7) % 7
+            days_ahead = days_ahead or 7
+            return today.replace(day=today.day + days_ahead)
+    return None
+
+def _parse_time(text: str) -> str | None:
+    # Time of day phrases
+    if "morning" in text:
+        return "09:00"
+    if "afternoon" in text:
+        return "14:00"
+    if "evening" in text:
+        return "18:00"
+
+    # Match times like '3 pm', '3:30 pm', '15:00', '10', '10:30'
+    time_patterns = [
+        r"(\d{1,2}):(\d{2})\s*(am|pm)?",
+        r"(\d{1,2})\s*(am|pm)",
+        r"(\d{1,2})"
+    ]
+    for pat in time_patterns:
+        m = re.search(pat, text)
+        if m:
+            hour = int(m.group(1))
+            minute = int(m.group(2)) if m.lastindex and m.lastindex >= 2 and m.group(2) else 0
+            ampm = m.group(3).lower() if m.lastindex and m.lastindex >= 3 and m.group(3) else None
+            if ampm == "pm" and hour < 12:
+                hour += 12
+            if ampm == "am" and hour == 12:
+                hour = 0
+            return f"{hour:02d}:{minute:02d}"
+    return None
+
+# Defensive: If parsing fails, always return None values
+def _safe_normalize_datetime(text: str) -> dict:
+    try:
+        return normalize_datetime(text)
+    except Exception:
+        return {"date": None, "time": None}
 from datetime import datetime, date, timezone
 from typing import Union
 

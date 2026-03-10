@@ -12,7 +12,7 @@ import logging
 class WorkflowManager:
     def __init__(self, db=None, professional_id=None):
         self.intent_parser = IntentParser()
-        self.response_builder = ResponseBuilder
+        self.response_builder = ResponseBuilder()
         self.schedule_service = ScheduleService()
         self.booking_service = BookingService()
         self.client_service = ClientService()
@@ -30,6 +30,15 @@ class WorkflowManager:
             "FETCH_CLIENT_SCHEDULE": self._fetch_client_schedule,
             "VIEW_UPCOMING_SESSIONS": self._view_upcoming_sessions,
         }
+        # Lightweight in-memory conversation context
+        self.context = {
+            "last_intent": None,
+            "last_entities": {},
+            "last_booking_id": None,
+            "last_client_name": None,
+            "last_date": None,
+            "last_time": None
+        }
 
     async def handle_chat(self, message: str) -> str:
         try:
@@ -39,24 +48,59 @@ class WorkflowManager:
             entities = intent_data.get("entities", {})
             logging.info("Intent detected: %s", intent)
 
-            # 2. Route to handler
+            # 2. Merge entities with context
+            merged_entities = self._merge_with_context(intent, entities)
+            logging.info("Merged entities with context: %s", merged_entities)
+
+            # 3. Validate entities for each intent
+            validation_error = self._validate_entities(intent, merged_entities)
+            if validation_error:
+                return await self.response_builder.error(validation_error)
+
+            # 4. Route to handler
             handler = self.intent_handlers.get(intent)
             if not handler:
                 return await self.response_builder.unknown_intent()
 
-            # 3. Validate entities for each intent
-            validation_error = self._validate_entities(intent, entities)
-            if validation_error:
-                return await self.response_builder.error(validation_error)
+            # 5. Call handler
+            result = await handler(merged_entities)
 
-            # 4. Call handler
-            result = await handler(entities)
+            # 6. Update context after successful operation
+            self._update_context(intent, merged_entities)
 
-            # 5. Build response
-            return await self.response_builder.build(intent, result, entities)
+            # 7. Build response
+            return await self.response_builder.build(intent, result, merged_entities)
         except Exception as e:
             logging.exception("WorkflowManager error")
             return await self.response_builder.error("Sorry, something went wrong. Please try again.")
+
+    def _merge_with_context(self, intent: str, entities: dict) -> dict:
+        """
+        Merge missing entities from context for conversational follow-ups.
+        User-provided entities always take precedence.
+        """
+        merged = dict(entities) if entities else {}
+        # Rule-based merge for common fields
+        context = self.context
+        # Fill missing fields from context if available
+        for field in ["client_name", "date", "time", "start_time", "end_time", "booking_id", "slot_id"]:
+            if merged.get(field) is None and context.get(f"last_{field}") is not None:
+                merged[field] = context.get(f"last_{field}")
+        # For booking_id, also check last_entities
+        if merged.get("booking_id") is None and context["last_entities"].get("booking_id"):
+            merged["booking_id"] = context["last_entities"]["booking_id"]
+        return merged
+
+    def _update_context(self, intent: str, entities: dict):
+        """
+        Update context memory after each successful operation.
+        Only update if values exist.
+        """
+        self.context["last_intent"] = intent
+        self.context["last_entities"] = dict(entities) if entities else {}
+        for field in ["client_name", "date", "time", "start_time", "end_time", "booking_id", "slot_id"]:
+            if entities.get(field):
+                self.context[f"last_{field}"] = entities[field]
 
     def _validate_entities(self, intent: str, entities: dict) -> str | None:
         # Returns error string if validation fails, else None
@@ -111,7 +155,7 @@ class WorkflowManager:
         client_name = entities.get("client_name")
         client = await self.client_service.get_client_by_name(self.db, client_name)
         if not client:
-             return {"client_not_found": client_name}
+            return {"client_not_found": client_name}
         return await self.client_service.get_client_bookings(self.db, client["client_id"])
 
     async def _view_upcoming_sessions(self, entities: dict) -> Any:
