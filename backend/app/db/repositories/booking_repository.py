@@ -1,6 +1,6 @@
 from uuid import UUID
 from supabase import Client
-from app.core.constants import BookingStatus
+from core.constants import BookingStatus
 from datetime import datetime
 
 class BookingRepository:

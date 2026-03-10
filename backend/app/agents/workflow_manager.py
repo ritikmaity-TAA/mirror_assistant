@@ -1,162 +1,163 @@
-
-# workflow_manager.py
-from typing import Any
-from agents.intent_parser import IntentParser
-from agents.response_builder import ResponseBuilder
-from services.schedule_service import ScheduleService
-from services.booking_service import BookingService
-from services.client_service import ClientService
+import asyncio
+import json
 import logging
+from uuid import UUID
+from typing import Dict, Any, List
+from core.config import MODEL_NAME
+
+from supabase import Client
+
+# Import existing services and constants
+from services.ai_service import groqclient
+from services.schedule_service import ScheduleService
+from services.client_service import ClientService
+from agents.intent_parser import intent_parser
+from agents.response_builder import response_builder
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Tool Schemas for Production
+# ============================================================================
+PRODUCTION_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_day_schedule",
+            "description": "Fetch the professional's schedule and available slots for a specific date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date_str": {
+                        "type": "string",
+                        "description": "The date to check in YYYY-MM-DD format (e.g., '2026-03-10')",
+                    }
+                },
+                "required": ["date_str"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_client_by_name",
+            "description": "Search for a client's ID in the database using their name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The full or partial name of the client to search for.",
+                    }
+                },
+                "required": ["name"],
+            },
+        },
+    }
+]
 
 
 class WorkflowManager:
-    def __init__(self, db=None, professional_id=None):
-        self.intent_parser = IntentParser()
-        self.response_builder = ResponseBuilder()
-        self.schedule_service = ScheduleService()
-        self.booking_service = BookingService()
-        self.client_service = ClientService()
-        self.db = db  # DB client, injected by backend
-        # Professional's UUID, injected by backend
-        self.professional_id = professional_id
-        self.intent_handlers = {
-            "OPEN_SLOT": self._open_slot,
-            "EDIT_SLOT": self._edit_slot,
-            "DELETE_SLOT": self._delete_slot,
-            "CREATE_BOOKING": self._create_booking,
-            "EDIT_BOOKING": self._edit_booking,
-            "DELETE_BOOKING": self._delete_booking,
-            "FETCH_DAY_SCHEDULE": self._fetch_day_schedule,
-            "FETCH_CLIENT_SCHEDULE": self._fetch_client_schedule,
-            "VIEW_UPCOMING_SESSIONS": self._view_upcoming_sessions,
-        }
-        # Lightweight in-memory conversation context
-        self.context = {
-            "last_intent": None,
-            "last_entities": {},
-            "last_booking_id": None,
-            "last_client_name": None,
-            "last_date": None,
-            "last_time": None
+    def __init__(self):
+        # Groq models specialized for tool use
+        self.model = MODEL_NAME
+        self.max_iterations = 5
+
+    def _get_system_prompt(self) -> str:
+        return (
+            "You are a helpful AI assistant managing a professional's booking schedule. "
+            "Use the provided tools to fetch schedules, find clients, and manage bookings. "
+            "If a user asks for information you don't have, use a tool to fetch it. "
+            "Always be concise and professional."
+        )
+
+    async def handle_message(self, db: Client, message: str, professional_id: UUID) -> Dict[str, Any]:
+        """
+        Main entry point for ChatbotService.
+        Executes the Agentic Loop with Multi-Tool Support.
+        """
+        client = await groqclient.get_client()
+        
+        messages = [
+            {"role": "system", "content": self._get_system_prompt()},
+            {"role": "user", "content": message},
+        ]
+
+        # Tool Execution Map (Wraps your services to inject db & professional_id)
+        # Note: In a true async environment, if your services do blocking I/O, 
+        # consider wrapping them in asyncio.to_thread()
+        available_functions = {
+            "get_day_schedule": lambda date_str: ScheduleService.get_day_schedule(db, professional_id, date_str),
+            "search_client_by_name": lambda name: ClientService.get_client_by_name(db, name)
         }
 
-    async def handle_chat(self, message: str) -> str:
+        executed_tools_history: List[str] = []
+        iteration = 0
+
         try:
-            # 1. Parse intent
-            intent_data = await self.intent_parser.parse_intent(message)
-            intent = intent_data.get("intent", "UNKNOWN")
-            entities = intent_data.get("entities", {})
-            logging.info("Intent detected: %s", intent)
+            # Initial LLM call
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=PRODUCTION_TOOLS,
+                tool_choice="auto"
+            )
 
-            # 2. Merge entities with context
-            merged_entities = self._merge_with_context(intent, entities)
-            logging.info("Merged entities with context: %s", merged_entities)
+            # Agentic Loop
+            while response.choices[0].message.tool_calls and iteration < self.max_iterations:
+                iteration += 1
+                response_message = response.choices[0].message
+                messages.append(response_message)
 
-            # 3. Validate entities for each intent
-            validation_error = self._validate_entities(intent, merged_entities)
-            if validation_error:
-                return await self.response_builder.error(validation_error)
+                for tool_call in response_message.tool_calls:
+                    function_name = tool_call.function.name
+                    function_args = json.loads(tool_call.function.arguments)
+                    executed_tools_history.append(function_name)
 
-            # 4. Route to handler
-            handler = self.intent_handlers.get(intent)
-            if not handler:
-                return await self.response_builder.unknown_intent()
+                    logger.info(f"LLM Tool Call: {function_name}({function_args})")
 
-            # 5. Call handler
-            result = await handler(merged_entities)
+                    try:
+                        # Execute the mapped service function
+                        func_to_call = available_functions.get(function_name)
+                        if not func_to_call:
+                            raise ValueError(f"Function {function_name} not implemented.")
+                        
+                        function_result = func_to_call(**function_args)
+                        result_str = json.dumps(function_result, default=str)
+                        
+                    except Exception as e:
+                        logger.error(f"Tool execution error ({function_name}): {str(e)}")
+                        result_str = json.dumps({"error": str(e)})
 
-            # 6. Update context after successful operation
-            self._update_context(intent, merged_entities)
+                    # Append tool result back to the LLM context
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": function_name,
+                        "content": result_str,
+                    })
 
-            # 7. Build response
-            return await self.response_builder.build(intent, result, merged_entities)
+                # Call LLM again with tool results
+                response = await client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=PRODUCTION_TOOLS,
+                    tool_choice="auto",
+                )
+
+            # Loop finished. Extract final answer.
+            final_reply = response.choices[0].message.content or "I have processed your request."
+            
+            # Use auxiliary agents to format the final output
+            intent = intent_parser.determine_intent(executed_tools_history)
+            return response_builder.build(final_reply, intent, bool(executed_tools_history))
+
         except Exception as e:
-            logging.exception("WorkflowManager error")
-            return await self.response_builder.error("Sorry, something went wrong. Please try again.")
+            logger.error(f"WorkflowManager Error: {str(e)}")
+            return response_builder.build(
+                reply="I encountered an error trying to process your request.",
+                intent="error",
+                tools_executed=False
+            )
 
-    def _merge_with_context(self, intent: str, entities: dict) -> dict:
-        """
-        Merge missing entities from context for conversational follow-ups.
-        User-provided entities always take precedence.
-        """
-        merged = dict(entities) if entities else {}
-        # Rule-based merge for common fields
-        context = self.context
-        # Fill missing fields from context if available
-        for field in ["client_name", "date", "time", "start_time", "end_time", "booking_id", "slot_id"]:
-            if merged.get(field) is None and context.get(f"last_{field}") is not None:
-                merged[field] = context.get(f"last_{field}")
-        # For booking_id, also check last_entities
-        if merged.get("booking_id") is None and context["last_entities"].get("booking_id"):
-            merged["booking_id"] = context["last_entities"]["booking_id"]
-        return merged
-
-    def _update_context(self, intent: str, entities: dict):
-        """
-        Update context memory after each successful operation.
-        Only update if values exist.
-        """
-        self.context["last_intent"] = intent
-        self.context["last_entities"] = dict(entities) if entities else {}
-        for field in ["client_name", "date", "time", "start_time", "end_time", "booking_id", "slot_id"]:
-            if entities.get(field):
-                self.context[f"last_{field}"] = entities[field]
-
-    def _validate_entities(self, intent: str, entities: dict) -> str | None:
-        # Returns error string if validation fails, else None
-        if intent == "OPEN_SLOT":
-            if not all(entities.get(k) for k in ("date", "start_time", "end_time")):
-                return "Please specify date, start time, and end time to open a slot."
-        elif intent == "CREATE_BOOKING":
-            if not all(entities.get(k) for k in ("client_name", "date", "time")):
-                return "Please specify client name, date, and time to create a booking."
-        elif intent == "FETCH_DAY_SCHEDULE":
-            if not entities.get("date"):
-                return "Please specify a date to fetch the schedule."
-        elif intent == "FETCH_CLIENT_SCHEDULE":
-            if not entities.get("client_name"):
-                return "Please specify a client name to fetch their schedule."
-        return None
-
-    # --- Service orchestration methods ---
-    async def _open_slot(self, entities: dict) -> Any:
-        return await self.schedule_service.create_slot(self.db, entities)
-
-    async def _edit_slot(self, entities: dict) -> Any:
-        return await self.schedule_service.edit_slot(self.db, entities)
-
-    async def _delete_slot(self, entities: dict) -> Any:
-        return await self.schedule_service.delete_slot(self.db, entities)
-
-    async def _create_booking(self, entities: dict) -> Any:
-        # Conflict detection before creating booking
-        date = entities.get("date")
-        time = entities.get("time")
-        # Fetch the day's schedule
-        schedule = await self.schedule_service.get_day_schedule(self.db, self.professional_id, date)
-        # Check for time conflict
-        if schedule and "entries" in schedule:
-            for entry in schedule["entries"]:
-                if entry.get("start_time") == time:
-                    return {"conflict": True, "date": date, "time": time}
-        return await self.booking_service.create_booking(self.db, entities)
-
-    async def _edit_booking(self, entities: dict) -> Any:
-        return await self.booking_service.edit_booking(self.db, entities)
-
-    async def _delete_booking(self, entities: dict) -> Any:
-        return await self.booking_service.delete_booking(self.db, entities)
-
-    async def _fetch_day_schedule(self, entities: dict) -> Any:
-        date = entities.get("date")
-        return await self.schedule_service.get_day_schedule(self.db, self.professional_id, date)
-
-    async def _fetch_client_schedule(self, entities: dict) -> Any:
-        client_name = entities.get("client_name")
-        client = await self.client_service.get_client_by_name(self.db, client_name)
-        if not client:
-            return {"client_not_found": client_name}
-        return await self.client_service.get_client_bookings(self.db, client["client_id"])
-
-    async def _view_upcoming_sessions(self, entities: dict) -> Any:
-        return await self.booking_service.get_upcoming_sessions(self.db, self.professional_id)
+workflow_manager = WorkflowManager()

@@ -1,9 +1,9 @@
 from uuid import UUID
 from fastapi import HTTPException
-from app.schemas.schedule import AvailabilitySlotCreate, AvailabilitySlotUpdate
-from app.utils.datetime_utils import is_past_date, validate_time_range
-from app.core.constants import ErrorMessages, SlotStatus
-from app.db.repositories.schedule_repository import ScheduleRepository
+from schemas.schedule import AvailabilitySlotCreate, AvailabilitySlotUpdate
+from utils.datetime_utils import is_past_date, validate_time_range
+from core.constants import ErrorMessages, SlotStatus
+from db.repositories.schedule_repository import ScheduleRepository
 from supabase import Client
 
 class ScheduleService:

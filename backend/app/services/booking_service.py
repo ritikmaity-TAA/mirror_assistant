@@ -1,10 +1,10 @@
 from uuid import UUID
 from fastapi import HTTPException
-from app.schemas.booking import BookingCreate, BookingUpdate
-from app.core.constants import ErrorMessages, SlotStatus, BookingStatus
-from app.db.repositories.booking_repository import BookingRepository
-from app.db.repositories.schedule_repository import ScheduleRepository
-from app.utils.datetime_utils import is_past_date, validate_time_range
+from schemas.booking import BookingCreate, BookingUpdate
+from core.constants import ErrorMessages, SlotStatus, BookingStatus
+from db.repositories.booking_repository import BookingRepository
+from db.repositories.schedule_repository import ScheduleRepository
+from utils.datetime_utils import is_past_date, validate_time_range
 from supabase import Client
 
 class BookingService:
