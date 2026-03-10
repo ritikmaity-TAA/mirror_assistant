@@ -1,6 +1,4 @@
 .env
 .venv
 
-crud.py
-database.py
-models.py
+supabase/**
