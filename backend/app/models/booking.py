@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 from typing import Optional
+from app.core.constants import BookingStatus
 
 class BookingModel:
     def __init__(
@@ -12,7 +13,8 @@ class BookingModel:
         end_time: str,
         booking_id: Optional[UUID] = None,
         slot_id: Optional[UUID] = None,
-        status: str = "scheduled",
+        # Using constant for default value
+        status: str = BookingStatus.SCHEDULED,
         booking_note: Optional[str] = None,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None
@@ -28,3 +30,7 @@ class BookingModel:
         self.booking_note = booking_note
         self.created_at = created_at
         self.updated_at = updated_at
+
+    def to_dict(self):
+        """Helper for Supabase inserts"""
+        return {k: str(v) if isinstance(v, UUID) else v for k, v in self.__dict__.items() if v is not None}
