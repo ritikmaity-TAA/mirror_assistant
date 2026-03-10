@@ -1,6 +1,6 @@
 from uuid import UUID
 from supabase import Client
-from app.core.constants import SlotStatus
+from core.constants import SlotStatus
 
 class ScheduleRepository:
     @staticmethod
