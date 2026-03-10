@@ -13,7 +13,8 @@ class ResponseBuilder:
         """
         Builds the dictionary ensuring the schema: reply, intent, action_suggested.
         """
-        # If tools were executed, an action was likely taken or suggested
+        # If tools were executed, an action was likely taken or suggested.
+        # Unknown actions or general inquiries do not count as actionable system changes.
         action_suggested = tools_executed or intent not in ["general_inquiry", "unknown_action"]
         
         response = {
@@ -22,7 +23,7 @@ class ResponseBuilder:
             "action_suggested": action_suggested
         }
         
-        logger.debug(f"Built response: {response}")
+        logger.debug(f"Built final response payload: {response}")
         return response
 
 response_builder = ResponseBuilder()

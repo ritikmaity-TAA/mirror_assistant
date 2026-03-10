@@ -8,18 +8,22 @@ class IntentParser:
     Analyzes the conversation history and tool calls to determine the user's primary intent.
     """
     
-    # Mapping of tool names to business intents
+    # Mapping of tool names to business intents based on Todo.md Req 7
     TOOL_INTENT_MAP = {
-        "get_day_schedule": "check_schedule",
-        "get_client_bookings": "check_client_history",
-        "search_client_by_name": "client_search",
-        "create_booking": "book_appointment",
-        "cancel_booking": "cancel_appointment",
-        "check_weather": "dummy_test" # Used for the dummy test
+        "create_slot": "open_slot",
+        "update_slot": "edit_slot",
+        "delete_slot": "delete_slot",
+        "create_booking": "create_booking",
+        "update_booking": "edit_booking",
+        "delete_booking": "delete_booking",
+        "get_day_schedule": "check_day_schedule",
+        "get_client_bookings": "check_client_schedule",
+        "get_upcoming_bookings": "check_upcoming_bookings",
+        "search_client_by_name": "client_search"
     }
 
     @staticmethod
-    def determine_intent(self,tool_calls_history: List[str]) -> str:
+    def determine_intent(tool_calls_history: List[str]) -> str:
         """
         Derives the intent based on the executed tools. If no tools were called,
         defaults to a general inquiry.
@@ -29,7 +33,7 @@ class IntentParser:
 
         # Use the most significant/latest tool called to determine the primary intent
         primary_tool = tool_calls_history[-1]
-        intent = self.TOOL_INTENT_MAP.get(primary_tool, "unknown_action")
+        intent = IntentParser.TOOL_INTENT_MAP.get(primary_tool, "unknown_action")
         
         logger.debug(f"Parsed intent '{intent}' from tool history: {tool_calls_history}")
         return intent
