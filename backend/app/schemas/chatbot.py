@@ -1,4 +1,5 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
+from uuid import UUID
 from pydantic import BaseModel
 
 class ChatMessage(BaseModel):
@@ -7,7 +8,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    professional_id: str
+    professional_id: UUID # Changed to UUID for industry consistency
     history: Optional[List[ChatMessage]] = []
 
 class ChatResponse(BaseModel):
