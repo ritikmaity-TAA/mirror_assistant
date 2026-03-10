@@ -4,13 +4,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-url: str = os.getenv("SUPABASE_URL", "")
-key: str = os.getenv("SUPABASE_KEY", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-supabase: Client = create_client(url, key)
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Supabase credentials are not set in environment variables")
 
-def get_db():
-    try:
-        yield supabase
-    finally:
-        pass
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def get_supabase() -> Client:
+    """
+    Dependency function to provide Supabase client.
+    """
+    return supabase
