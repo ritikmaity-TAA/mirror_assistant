@@ -1,5 +1,7 @@
 import re
 import logging
+from datetime import datetime, date, timezone
+from typing import Union
 
 def normalize_datetime(text: str) -> dict | None:
     """
@@ -80,8 +82,6 @@ def _safe_normalize_datetime(text: str) -> dict:
         return normalize_datetime(text)
     except Exception:
         return {"date": None, "time": None}
-from datetime import datetime, date, timezone
-from typing import Union
 
 def get_now() -> datetime:
     """Returns current UTC time."""
