@@ -121,47 +121,40 @@ This creates: `supabase/migrations/<timestamp>_create_core_tables.sql`
 Open that file and paste the following SQL:
 
 ```sql
--- Clients (reference table)
+-- 1. Create Professionals table
+CREATE TABLE professionals (
+    professional_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    full_name TEXT,
+    email TEXT
+);
+
+-- 2. Create Clients table
 CREATE TABLE clients (
-    client_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    client_name TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    client_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    client_name TEXT NOT NULL
 );
 
--- Availability Slots
+-- 3. Create Availability table
 CREATE TABLE availability_slots (
-    slot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    professional_id UUID NOT NULL,
-    date DATE NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available'
-        CHECK (status IN ('available', 'booked', 'blocked', 'cancelled')),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    slot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    professional_id UUID REFERENCES professionals(professional_id),
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    status TEXT DEFAULT 'available'
 );
 
--- Bookings
+-- 4. Create Bookings table
 CREATE TABLE bookings (
-    booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    professional_id UUID NOT NULL,
-    client_id UUID NOT NULL REFERENCES clients(client_id),
-    slot_id UUID NOT NULL REFERENCES availability_slots(slot_id),
-    date DATE NOT NULL,
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    status TEXT NOT NULL DEFAULT 'scheduled'
-        CHECK (status IN ('scheduled', 'rescheduled', 'cancelled', 'completed', 'no_show')),
-    booking_note TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    booking_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    professional_id UUID REFERENCES professionals(professional_id),
+    client_id UUID REFERENCES clients(client_id),
+    slot_id UUID REFERENCES availability_slots(slot_id),
+    date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    status TEXT DEFAULT 'scheduled'
 );
-
--- Indexes for common queries
-CREATE INDEX idx_slots_professional_date ON availability_slots(professional_id, date);
-CREATE INDEX idx_bookings_professional_date ON bookings(professional_id, date);
-CREATE INDEX idx_bookings_client ON bookings(client_id);
 ```
 
 ---
@@ -274,4 +267,4 @@ supabase status
 
 ---
 
-*Setup complete. Next step: build the repository layer in `app/db/repositories/`.*
+*Setup complete*
