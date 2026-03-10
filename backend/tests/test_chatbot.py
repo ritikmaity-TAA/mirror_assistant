@@ -31,7 +31,7 @@ async def test_chatbot_service():
         "I want to open a new slot for tomorrow from 2 PM to 3 PM.",
         
         # 3. MULTI-STEP BOOKING (Search -> Fetch -> Book)
-        "Can you book a session for John Kanis tomorrow at 2 PM?",
+        "Can you book a session for John Mirror tomorrow at 2 PM?",
         
         # 4. VIEW UPCOMING (Verify the booking exists)
         "Show me all my upcoming bookings.",
@@ -40,7 +40,16 @@ async def test_chatbot_service():
         "Actually, cancel that booking I just made for John Kanis.",
         
         # 6. CLEANUP (Remove the availability slot)
-        "Delete the availability slot for tomorrow at 2 PM."
+        "Delete the availability slot for tomorrow at 2 PM.",
+
+        #7. CREATE SLOT & BOOKING
+        "Open a slot on day after tomorrow from 4PM to 8PM.",
+        
+        # BOOKING a new session
+        "Book a session with John mirror from 4PM to 6PM on 12 March.",
+
+        #8. RESCHEDULE booking
+        "Reshedule the session with John Mirror from 7pm to 8pm on day after tomorrow."
     ]
 
     for msg in test_scenarios:
