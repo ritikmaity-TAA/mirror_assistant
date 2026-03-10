@@ -194,18 +194,24 @@ class WorkflowManager:
 
                     logger.info(f"LLM Tool Call: {function_name}({function_args})")
 
+                    # Inside handle_message, inside the tool_calls loop:
                     try:
                         func_to_call = available_functions.get(function_name)
                         if not func_to_call:
                             raise ValueError(f"Function {function_name} not implemented.")
                         
-                        # Note: In heavy production, wrap blocking I/O db calls in asyncio.to_thread()
-                        function_result = func_to_call(**function_args)
+                        # Check if the result is a coroutine and await it if so
+                        result = func_to_call(**function_args)
+                        if asyncio.iscoroutine(result):
+                            function_result = await result
+                        else:
+                            function_result = result
+    
+                        # Standardize result to JSON string (handling UUIDs)
                         result_str = json.dumps(function_result, default=str)
-                        
+    
                     except Exception as e:
                         logger.warning(f"Tool execution failed ({function_name}): {str(e)}")
-                        # Feed the error back to the LLM so it can correct the user
                         result_str = json.dumps({"error": str(e)})
 
                     messages.append({
