@@ -28,7 +28,7 @@ class ScheduleService:
                     detail=f"{ErrorMessages.OVERLAP_DETECTED} ({existing['start_time']}-{existing['end_time']})"
                 )
 
-        result = ScheduleRepository.create_slot(db, slot.dict())
+        result = ScheduleRepository.create_slot(db, slot.model_dump(mode="json"))
         return {"status": "success", "data": result.data[0]}
 
     @staticmethod

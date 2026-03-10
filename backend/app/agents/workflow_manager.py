@@ -6,7 +6,6 @@ from typing import Dict, Any, List
 
 from supabase import Client
 
-# Using absolute imports matching the mirror_assistant_backend/app structure
 from core.config import MODEL_NAME
 from services.ai_service import groqclient
 from services.schedule_service import ScheduleService
@@ -144,6 +143,7 @@ class WorkflowManager:
             "Always be concise, confirm actions clearly, and guide the user if validation fails."
         )
 
+    # async def handle_message(self, db: Client, message: str, professional_id: UUID, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
     async def handle_message(self, db: Client, message: str, professional_id: UUID) -> Dict[str, Any]:
         """
         Main entry point for ChatbotService.
@@ -152,9 +152,13 @@ class WorkflowManager:
         client = await groqclient.get_client()
         
         messages = [
-            {"role": "system", "content": self._get_system_prompt()},
-            {"role": "user", "content": message},
+            {"role": "system", "content": self._get_system_prompt()}
         ]
+
+        # if chat_history:
+        #     messages.extend(chat_history)
+
+        messages.append({"role":"user", "content":message})
 
         # Map tool names to lambda wrappers that handle Pydantic model creation and dependency injection
         available_functions = {
@@ -168,7 +172,7 @@ class WorkflowManager:
                 db, BookingCreate(professional_id=professional_id, client_id=UUID(client_id), slot_id=UUID(slot_id), date=date, start_time=start_time, end_time=end_time, booking_note=booking_note)
             ),
             "delete_booking": lambda booking_id: BookingService.cancel_booking(db, UUID(booking_id)),
-            "get_upcoming_bookings": lambda: BookingService.get_upcoming_bookings(db, professional_id)
+            "get_upcoming_bookings": lambda **kwargs: BookingService.get_upcoming_bookings(db, professional_id)
         }
 
         executed_tools_history: List[str] = []
