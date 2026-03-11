@@ -100,5 +100,10 @@ def is_past_datetime(target_date: str, target_time: str) -> bool:
     return combined < datetime.now()
 
 def validate_time_range(start_time: str, end_time: str) -> bool:
-    """End time must be later than start time."""
+    """
+    Industry Standard: End time must be strictly greater than start time.
+    Prevents 'Zero-Duration' slots like 16:30 to 16:30.
+    """
+    if not start_time or not end_time:
+        return False
     return start_time < end_time
