@@ -77,14 +77,12 @@ export const ChatInterface: React.FC = () => {
         {messages.map((msg, index) => (
           <div key={index} className="flex flex-col">
             <div className={`flex items-start space-x-3 ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
-              }`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
+                }`}>
                 {msg.role === 'user' ? getInitials(professionalName) : 'M'}
               </div>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
-                msg.role === 'user' ? 'bg-gray-100 text-gray-800' : 'text-gray-800'
-              }`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${msg.role === 'user' ? 'bg-gray-100 text-gray-800' : 'text-gray-800'
+                }`}>
                 {msg.content}
               </div>
             </div>
@@ -126,20 +124,20 @@ export const ChatInterface: React.FC = () => {
 
         {error && (
           <div className="flex justify-center py-4">
-             <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs border border-red-100 shadow-sm">
+            <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs border border-red-100 shadow-sm">
               Error: {error}
             </div>
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input Section */}
       <div className="p-4 border-t border-gray-100">
-        <form onSubmit={handleSubmit} className="flex items-center space-x-3 bg-gray-50 rounded-xl px-4 py-2 border border-gray-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:bg-white transition-all">
+        <form onSubmit={handleSubmit} className="flex items-center space-x-3 bg-white rounded-xl px-4 py-2 border border-gray-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:bg-white transition-all">
           <button type="button" className="text-gray-400 hover:text-gray-600">
-             🎤
+            🎤
           </button>
           <input
             type="text"
@@ -147,12 +145,12 @@ export const ChatInterface: React.FC = () => {
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
             placeholder="Write message"
-            className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 outline-none"
+            className="flex-1 bg-white text-black border-none focus:ring-0 text-sm py-2 outline-none"
           />
           <div className="flex items-center space-x-3">
             <button type="button" className="text-gray-400 hover:text-gray-600 text-lg">📎</button>
             <button type="button" className="text-gray-400 hover:text-gray-600 text-lg">🖼️</button>
-            <button 
+            <button
               type="submit"
               disabled={!input.trim() || isLoading}
               className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors disabled:opacity-50"
