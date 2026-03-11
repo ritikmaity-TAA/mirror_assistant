@@ -5,7 +5,8 @@ import { useChat } from '@/hooks/useChat';
 import { useAppContext } from '@/context/app-context';
 
 export const ChatInterface: React.FC = () => {
-  const { messages, isLoading, error, sendMessage, setMessages } = useChat();
+  // Destructure the new startNewChat function
+  const { messages, isLoading, error, sendMessage, setMessages, startNewChat } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { professionalName } = useAppContext();
@@ -36,7 +37,7 @@ export const ChatInterface: React.FC = () => {
         },
       ]);
     }
-  }, [setMessages]);
+  }, [setMessages, messages.length]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,12 +73,24 @@ export const ChatInterface: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] bg-white max-w-5xl mx-auto w-full p-6">
+    <div className="flex flex-col h-[calc(100vh-64px)] bg-white max-w-5xl mx-auto w-full p-6 relative">
+      
+      {/* ADDED: A subtle header with a "New Chat" button */}
+      <div className="flex justify-between items-center px-4 pb-4 border-b border-gray-100 mb-4">
+        <h2 className="text-lg font-semibold text-gray-800">Mirror Assistant</h2>
+        <button 
+          onClick={startNewChat}
+          className="text-sm text-gray-500 hover:text-blue-600 font-medium px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
+        >
+          + New Chat
+        </button>
+      </div>
+
       <div className="flex-1 overflow-y-auto space-y-6 px-4">
         {messages.map((msg, index) => (
           <div key={index} className="flex flex-col">
             <div className={`flex items-start space-x-3 ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
                 }`}>
                 {msg.role === 'user' ? getInitials(professionalName) : 'M'}
               </div>
@@ -87,7 +100,7 @@ export const ChatInterface: React.FC = () => {
               </div>
             </div>
 
-            {/* Menu Options (Only for initial assistant message or when relevant) */}
+            {/* Menu Options (Only for initial assistant message) */}
             {msg.role === 'assistant' && index === 0 && (
               <div className="ml-11 mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl">
                 {menuOptions.map((section) => (
@@ -112,14 +125,14 @@ export const ChatInterface: React.FC = () => {
         ))}
 
         {isLoading && (
-          <div className="flex items-start space-x-3">
-            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-bold">M</div>
-            <div className="flex space-x-1 py-3">
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"></div>
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-75"></div>
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-150"></div>
-            </div>
-          </div>
+           <div className="flex items-start space-x-3">
+             <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-bold">M</div>
+             <div className="flex space-x-1 py-3">
+               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce"></div>
+               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-75"></div>
+               <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-150"></div>
+             </div>
+           </div>
         )}
 
         {error && (
@@ -133,8 +146,8 @@ export const ChatInterface: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Section */}
-      <div className="p-4 border-t border-gray-100">
+      {/* Input Section (Unchanged) */}
+      <div className="p-4 border-t border-gray-100 mt-4">
         <form onSubmit={handleSubmit} className="flex items-center space-x-3 bg-white rounded-xl px-4 py-2 border border-gray-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:bg-white transition-all">
           <button type="button" className="text-gray-400 hover:text-gray-600">
             🎤
