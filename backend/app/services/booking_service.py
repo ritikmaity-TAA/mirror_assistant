@@ -24,7 +24,7 @@ class BookingService:
         # (Logic to ensure professional isn't double-booked here)
 
         # 3. Transaction: Create Booking & Update Slot Status (Req 10.1)
-        booking_data = BookingRepository.create_booking(db, booking.dict())
+        booking_data = BookingRepository.create_booking(db, booking.model_dump(mode="json"))
         ScheduleRepository.update_slot_status(db, booking.slot_id, SlotStatus.BOOKED)
 
         return {"status": "booking created successfully", "data": booking_data.data[0]}
@@ -41,7 +41,7 @@ class BookingService:
 
     @staticmethod
     def update_booking(db: Client, booking_id: UUID, booking: BookingUpdate):
-        result = BookingRepository.update_booking(db, booking_id, booking.dict(exclude_unset=True))
+        result = BookingRepository.update_booking(db, booking_id, booking.model_dump(mode="json"))
         return {"status": "success", "data": result.data[0]}
 
     @staticmethod

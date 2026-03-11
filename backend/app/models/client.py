@@ -12,3 +12,6 @@ class ClientModel:
         self.client_id = client_id
         self.client_name = client_name
         self.created_at = created_at
+
+    def to_dict(self):
+        return {k: str(v) if isinstance(v, UUID) else v for k, v in self.__dict__.items() if v is not None}
