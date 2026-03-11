@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel
 from enum import Enum
-from app.core.constants import SlotStatus
+from core.constants import SlotStatus
 
 class SlotStatusEnum(str, Enum):
     AVAILABLE = SlotStatus.AVAILABLE

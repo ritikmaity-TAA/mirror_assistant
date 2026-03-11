@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 from pydantic import BaseModel, Field
 from enum import Enum
-from app.core.constants import BookingStatus
+from core.constants import BookingStatus
 
 class BookingStatusEnum(str, Enum):
     SCHEDULED = BookingStatus.SCHEDULED

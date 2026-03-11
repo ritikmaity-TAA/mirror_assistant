@@ -3,8 +3,8 @@ import json
 import logging
 from uuid import UUID
 from typing import Dict, Any, List
-
-from supabase import Client
+from pydantic import ValidationError
+from supabase import Client 
 
 from core.config import MODEL_NAME
 from services.ai_service import groqclient
@@ -143,7 +143,58 @@ class WorkflowManager:
             "Always be concise, confirm actions clearly, and guide the user if validation fails."
         )
 
-    # async def handle_message(self, db: Client, message: str, professional_id: UUID, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
+    def _get_tool_map(self, db: Client, professional_id: UUID) -> Dict[str, callable]:
+        """
+        Encapsulates the dependency injection and routes LLM tool calls to the correct services.
+        Uses **kwargs to seamlessly unpack LLM arguments into Pydantic models.
+        """
+        return {
+            "get_day_schedule": lambda date_str, **kwargs: ScheduleService.get_day_schedule(db, professional_id, date_str),
+            "search_client_by_name": lambda name, **kwargs: ClientService.get_client_by_name(db, name),
+            "create_slot": lambda **kwargs: ScheduleService.create_slot(
+                db, AvailabilitySlotCreate(professional_id=professional_id, **kwargs)
+            ),
+            "delete_slot": lambda slot_id, **kwargs: ScheduleService.delete_slot(db, UUID(slot_id)),
+            "create_booking": lambda **kwargs: BookingService.create_booking(
+                db, BookingCreate(professional_id=professional_id, **kwargs)
+            ),
+            "delete_booking": lambda booking_id, **kwargs: BookingService.cancel_booking(db, UUID(booking_id)),
+            "get_upcoming_bookings": lambda **kwargs: BookingService.get_upcoming_bookings(db, professional_id)
+        }
+
+    async def _execute_tool(self, tool_call, tool_map: Dict[str, callable]) -> str:
+        """
+        Executes a single tool safely and formats the output/errors for the LLM context window.
+        """
+        function_name = tool_call.function.name
+        try:
+            function_args = json.loads(tool_call.function.arguments)
+            logger.info(f"LLM Tool Call: {function_name}({function_args})")
+
+            func_to_call = tool_map.get(function_name)
+            if not func_to_call:
+                return json.dumps({"error": f"Function '{function_name}' not implemented."})
+            
+            result = func_to_call(**function_args)
+            
+            if asyncio.iscoroutine(result):
+                function_result = await result
+            else:
+                function_result = result
+
+            return json.dumps(function_result, default=str)
+
+        except ValidationError as e:
+            # Format Pydantic errors so the AI knows exactly which parameter it messed up
+            error_details = [{"field": err["loc"][-1], "issue": err["msg"]} for err in e.errors()]
+            logger.warning(f"Pydantic validation failed for {function_name}: {error_details}")
+            return json.dumps({"error": "Parameter validation failed", "details": error_details})
+
+        except Exception as e:
+            # Catch HTTPExceptions (like your 409 overlaps) or generic Python errors
+            logger.warning(f"Tool execution failed ({function_name}): {str(e)}")
+            return json.dumps({"error": str(e)})
+
     async def handle_message(self, db: Client, message: str, professional_id: UUID) -> Dict[str, Any]:
         """
         Main entry point for ChatbotService.
@@ -151,34 +202,16 @@ class WorkflowManager:
         """
         client = await groqclient.get_client()
         
-        messages = [
-            {"role": "system", "content": self._get_system_prompt()}
-        ]
-
-        # if chat_history:
-        #     messages.extend(chat_history)
-
-        messages.append({"role":"user", "content":message})
-
-        # Map tool names to lambda wrappers that handle Pydantic model creation and dependency injection
-        available_functions = {
-            "get_day_schedule": lambda date_str: ScheduleService.get_day_schedule(db, professional_id, date_str),
-            "search_client_by_name": lambda name: ClientService.get_client_by_name(db, name),
-            "create_slot": lambda date, start_time, end_time: ScheduleService.create_slot(
-                db, AvailabilitySlotCreate(professional_id=professional_id, date=date, start_time=start_time, end_time=end_time)
-            ),
-            "delete_slot": lambda slot_id: ScheduleService.delete_slot(db, UUID(slot_id)),
-            "create_booking": lambda client_id, slot_id, date, start_time, end_time, booking_note="": BookingService.create_booking(
-                db, BookingCreate(professional_id=professional_id, client_id=UUID(client_id), slot_id=UUID(slot_id), date=date, start_time=start_time, end_time=end_time, booking_note=booking_note)
-            ),
-            "delete_booking": lambda booking_id: BookingService.cancel_booking(db, UUID(booking_id)),
-            "get_upcoming_bookings": lambda **kwargs: BookingService.get_upcoming_bookings(db, professional_id)
-        }
-
+        messages = [{"role": "system", "content": self._get_system_prompt()}, {"role": "user", "content": message}]
+        
+        # Generate the tool routing map once per request
+        tool_map = self._get_tool_map(db, professional_id)
+        
         executed_tools_history: List[str] = []
         iteration = 0
 
         try:
+            # Initial LLM Assessment
             response = await client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -186,45 +219,26 @@ class WorkflowManager:
                 tool_choice="auto"
             )
 
+            # Agentic Tool Execution Loop
             while response.choices[0].message.tool_calls and iteration < self.max_iterations:
                 iteration += 1
                 response_message = response.choices[0].message
                 messages.append(response_message)
 
                 for tool_call in response_message.tool_calls:
-                    function_name = tool_call.function.name
-                    function_args = json.loads(tool_call.function.arguments)
-                    executed_tools_history.append(function_name)
+                    executed_tools_history.append(tool_call.function.name)
 
-                    logger.info(f"LLM Tool Call: {function_name}({function_args})")
-
-                    # Inside handle_message, inside the tool_calls loop:
-                    try:
-                        func_to_call = available_functions.get(function_name)
-                        if not func_to_call:
-                            raise ValueError(f"Function {function_name} not implemented.")
-                        
-                        # Check if the result is a coroutine and await it if so
-                        result = func_to_call(**function_args)
-                        if asyncio.iscoroutine(result):
-                            function_result = await result
-                        else:
-                            function_result = result
-    
-                        # Standardize result to JSON string (handling UUIDs)
-                        result_str = json.dumps(function_result, default=str)
-    
-                    except Exception as e:
-                        logger.warning(f"Tool execution failed ({function_name}): {str(e)}")
-                        result_str = json.dumps({"error": str(e)})
+                    # Offload the try/catch logic to our new isolated helper method
+                    result_str = await self._execute_tool(tool_call, tool_map)
 
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "name": function_name,
+                        "name": tool_call.function.name,
                         "content": result_str,
                     })
 
+                # Re-evaluate with the new tool context
                 response = await client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -232,6 +246,7 @@ class WorkflowManager:
                     tool_choice="auto",
                 )
 
+            # Final Processing
             final_reply = response.choices[0].message.content or "I have processed your request."
             intent = intent_parser.determine_intent(executed_tools_history)
             

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from .api.routes import bookings, schedules, clients, chatbot
-from .db.supabase import get_db
+from api.routes import bookings, schedules, clients, chatbot
+from db.supabase import get_db
 from supabase import Client
 
 app = FastAPI(
