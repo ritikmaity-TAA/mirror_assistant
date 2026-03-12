@@ -1,7 +1,7 @@
 from uuid import UUID
 from fastapi import HTTPException
 from schemas.schedule import AvailabilitySlotCreate, AvailabilitySlotUpdate
-from utils.datetime_utils import is_past_date, validate_time_range
+from utils.datetime_utils import is_past_datetime, validate_time_range
 from utils.validators import generate_uuid
 from core.constants import ErrorMessages, SlotStatus
 from db.repositories.schedule_repository import ScheduleRepository
@@ -10,13 +10,14 @@ from supabase import Client
 class ScheduleService:
     @staticmethod
     def create_slot(db: Client, slot: AvailabilitySlotCreate):
-        # 1. Past Date Validation (Req 11)
-        if is_past_date(slot.date):
-            raise HTTPException(status_code=400, detail=ErrorMessages.PAST_DATE_ERROR)
+        # 1. Past-Time Validation (CEO Rule: No scheduling in the past)
+        if is_past_datetime(slot.date, slot.start_time):
+            raise HTTPException(status_code=400, detail="Cannot create availability for a time that has already passed.")
 
         # 2. Logical Time Validation (Req 7.1)
+        # Updated validate_time_range will now catch start == end (the 14th date problem)
         if not validate_time_range(slot.start_time, slot.end_time):
-            raise HTTPException(status_code=400, detail="End time must be after start time.")
+            raise HTTPException(status_code=400, detail="End time must be strictly after start time.")
 
         # 3. Overlap Check (Req 11) - Smart Update
         existing_slots = ScheduleRepository.get_slots_by_professional_and_date(
@@ -49,6 +50,7 @@ class ScheduleService:
     @staticmethod
     def get_day_schedule(db: Client, professional_id: UUID, date_str: str):
         # Req 7.7: Ordered day timeline
+        # Ensuring professional_id is stringified for the repo call
         slots = ScheduleRepository.get_day_schedule(db, str(professional_id), date_str)
         return {"date": date_str, "entries": slots.data if slots.data else []}
 
@@ -56,6 +58,8 @@ class ScheduleService:
     def update_slot(db: Client, slot_id: UUID, slot: AvailabilitySlotUpdate):
         # Business logic: prevent updating booked slots
         existing = ScheduleRepository.get_slot_by_id(db, str(slot_id))
+        
+        # Consistent handling of Supabase response
         slot_record = existing.data[0] if isinstance(existing.data, list) and existing.data else existing.data
         
         if not slot_record:
@@ -64,7 +68,7 @@ class ScheduleService:
         if slot_record.get('status') == SlotStatus.BOOKED:
             raise HTTPException(status_code=400, detail="Cannot update a slot that is already booked.")
             
-        # Perform update
+        # Perform update - stringifying the slot_id
         update_data = slot.model_dump(mode="json", exclude_unset=True)
         result = ScheduleRepository.update_slot(db, str(slot_id), update_data)
         
@@ -79,9 +83,10 @@ class ScheduleService:
         if not slot_record:
             raise HTTPException(status_code=404, detail="invalid slot identifier")
 
+        # Industry standard: Don't allow deleting if a patient is already coming!
         if slot_record.get('status') == SlotStatus.BOOKED:
             raise HTTPException(status_code=400, detail="deletion blocked due to active booking")
 
-        # Proceed to cancel
+        # Proceed to cancel (Soft delete)
         result = ScheduleRepository.update_slot_status(db, str(slot_id), SlotStatus.CANCELLED)
         return {"status": "success", "message": "Slot marked as cancelled."}

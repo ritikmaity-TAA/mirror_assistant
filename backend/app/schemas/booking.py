@@ -17,8 +17,8 @@ class BookingBase(BaseModel):
     client_id: UUID
     slot_id: UUID  # Mandatory per Req 11.c
     date: str      # YYYY-MM-DD
-    start_time: str # HH:MM:SS
-    end_time: str   # HH:MM:SS
+    start_time: str # HH:MM
+    end_time: str   # HH:MM
     status: BookingStatusEnum = BookingStatusEnum.SCHEDULED
     booking_note: Optional[str] = ""
 

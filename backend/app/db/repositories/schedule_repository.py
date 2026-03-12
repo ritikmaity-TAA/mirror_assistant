@@ -39,3 +39,15 @@ class ScheduleRepository:
             .update(payload)\
             .eq("slot_id", str(slot_id))\
             .execute()
+
+
+    @staticmethod
+    def update_slot(db: Client, slot_id: str, update_data: dict):
+        """
+        NEW: Updates any field (start_time, end_time, status).
+        Required for the 'Smart Fix' Slot Splitting logic.
+        """
+        return db.table("availability_slots")\
+            .update(update_data)\
+            .eq("slot_id", str(slot_id))\
+            .execute()

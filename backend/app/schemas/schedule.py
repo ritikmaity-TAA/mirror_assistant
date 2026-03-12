@@ -14,8 +14,8 @@ class SlotStatusEnum(str, Enum):
 class AvailabilitySlotBase(BaseModel):
     professional_id: UUID
     date: str  # ISO format YYYY-MM-DD
-    start_time: str  # HH:MM:SS
-    end_time: str # HH:MM:SS
+    start_time: str  # HH:MM
+    end_time: str # HH:MM
     status: SlotStatusEnum = SlotStatusEnum.AVAILABLE
 
 class AvailabilitySlotCreate(AvailabilitySlotBase):

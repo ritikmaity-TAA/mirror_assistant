@@ -1,6 +1,6 @@
 import re
 import logging
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 from typing import Union
 
 def normalize_datetime(text: str) -> dict | None:
@@ -94,9 +94,16 @@ def is_past_date(target_date: Union[str, date]) -> bool:
     return target_date < date.today()
 
 def is_past_datetime(target_date: str, target_time: str) -> bool:
-    """Checks if the specific slot/booking is in the past."""
+    """
+    Checks if the specific slot/booking is in the past.
+    Works for same-day checks as well (e.g., cannot book 9:00 AM if it's 10:00 AM).
+    """
+    # Truncate to HH:MM if HH:MM:SS is provided for consistency
+    target_time = target_time[:5]
     combined = datetime.fromisoformat(f"{target_date}T{target_time}")
-    # Assuming the input time is local to the professional, adjust if using UTC
+    
+    # We use naive comparison since the system is currently using local machine time
+    # (Matching datetime.now() behavior)
     return combined < datetime.now()
 
 def validate_time_range(start_time: str, end_time: str) -> bool:
@@ -107,3 +114,13 @@ def validate_time_range(start_time: str, end_time: str) -> bool:
     if not start_time or not end_time:
         return False
     return start_time < end_time
+
+def calculate_time_block(start_time_str: str) -> tuple[str, str]:
+    """
+    50 mins work + 10 mins buffer = 60 mins total block.
+    Returns (work_end_time, total_block_end_time)
+    """
+    start_dt = datetime.strptime(start_time_str, "%H:%M")
+    work_end = (start_dt + timedelta(minutes=50)).strftime("%H:%M")
+    total_end = (start_dt + timedelta(minutes=60)).strftime("%H:%M")
+    return work_end, total_end
