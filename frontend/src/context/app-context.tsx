@@ -48,35 +48,50 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [professionalName, setProfessionalName] = useState('Shreya Jain');
   const [professionalRole, setProfessionalRole] = useState('Psychologist');
 
-  // Initialise sessionId from sessionStorage, or generate a fresh one.
-  // This persists across Next.js soft navigations but clears on tab close.
-  const [sessionId, setSessionId] = useState<string>(() => {
-    if (typeof window === 'undefined') return generateUUID();
-    return sessionStorage.getItem(SESSION_ID_KEY) ?? generateUUID();
-  });
+  // Initialise with default values to match Server-Side Rendering (SSR).
+  // This prevents hydration mismatches because the first client render will match the server.
+  const [sessionId, setSessionId] = useState<string>('');
+  const [messages, setMessages]   = useState<ChatMessage[]>([INITIAL_MESSAGE]);
+  const [isLoaded, setIsLoaded]   = useState(false);
 
-  // Initialise messages from sessionStorage so the chat survives navigation.
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    if (typeof window === 'undefined') return [INITIAL_MESSAGE];
-    try {
-      const stored = sessionStorage.getItem(MESSAGES_KEY);
-      return stored ? JSON.parse(stored) : [INITIAL_MESSAGE];
-    } catch {
-      return [INITIAL_MESSAGE];
+  // Load from sessionStorage only AFTER mount
+  useEffect(() => {
+    const storedId = sessionStorage.getItem(SESSION_ID_KEY);
+    const storedMsg = sessionStorage.getItem(MESSAGES_KEY);
+
+    if (storedId) {
+      setSessionId(storedId);
+    } else {
+      const newId = generateUUID();
+      setSessionId(newId);
+      sessionStorage.setItem(SESSION_ID_KEY, newId);
     }
-  });
 
-  // Keep sessionStorage in sync whenever sessionId or messages change.
+    if (storedMsg) {
+      try {
+        setMessages(JSON.parse(storedMsg));
+      } catch (err) {
+        console.error('Failed to parse stored messages', err);
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // Keep sessionStorage in sync whenever sessionId or messages change, 
+  // but only after we've finished the initial load.
   useEffect(() => {
-    sessionStorage.setItem(SESSION_ID_KEY, sessionId);
-  }, [sessionId]);
+    if (isLoaded) {
+      sessionStorage.setItem(SESSION_ID_KEY, sessionId);
+    }
+  }, [sessionId, isLoaded]);
 
   useEffect(() => {
-    sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
-  }, [messages]);
+    if (isLoaded) {
+      sessionStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+    }
+  }, [messages, isLoaded]);
 
-  // Called after the user confirms "New Chat" — generates a fresh session
-  // and clears both in-memory state and sessionStorage.
+  // Called after the user confirms "New Chat"
   const resetSession = () => {
     const newId = generateUUID();
     setSessionId(newId);

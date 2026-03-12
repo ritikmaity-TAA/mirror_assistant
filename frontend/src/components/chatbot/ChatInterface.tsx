@@ -11,6 +11,7 @@ export const ChatInterface: React.FC = () => {
   const [input, setInput]                   = useState('');
   const [showConfirm, setShowConfirm]       = useState(false);
   const messagesEndRef                      = useRef<HTMLDivElement>(null);
+  const inputRef                            = useRef<HTMLInputElement>(null);
 
   const getInitials = (name: string) =>
     name.split(' ').map((n) => n[0]).join('').toUpperCase();
@@ -20,6 +21,18 @@ export const ChatInterface: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
+  }, [messages, isLoading]);
+
+  // Auto-focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Re-focus after message sent or navigation
+  useEffect(() => {
+    if (!isLoading) {
+      inputRef.current?.focus();
+    }
   }, [messages, isLoading]);
 
   // Only set initial greeting if messages are genuinely empty
@@ -35,6 +48,7 @@ export const ChatInterface: React.FC = () => {
     if (!input.trim() || isLoading) return;
     const currentInput = input;
     setInput('');
+    inputRef.current?.focus();
     await sendMessage(currentInput);
   };
 
@@ -99,7 +113,7 @@ export const ChatInterface: React.FC = () => {
           const id       = row['slot id'] || row['booking id'] || row['id'] || 'N/A';
           const isBooking = !!row['booking id'] || !!row['client'];
           return (
-            <div key={i} className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden max-w-sm">
+            <div key={i} className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-shadow duration-300 overflow-hidden max-w-sm border-none">
               <div className="p-6">
                 <div className="text-lg font-semibold text-gray-800">
                   {start}{end ? ` – ${end}` : ''}{client ? ` - Session with ${client}` : ''}
@@ -107,19 +121,18 @@ export const ChatInterface: React.FC = () => {
                 <div className="flex items-center justify-between mt-3">
                   <div className="text-xs text-gray-400">ID: <span className="font-mono">{id}</span></div>
                   {status && (
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                      status.toLowerCase() === 'available' ? 'bg-green-100 text-green-700' :
-                      status.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-                    }`}>{status}</span>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${status.toLowerCase() === 'available' ? 'bg-green-100 text-green-700' :
+                        status.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
+                      }`}>{status}</span>
                   )}
                 </div>
               </div>
               <div className="bg-white px-6 py-4 border-t border-gray-50 flex justify-around">
-                <button onClick={() => sendMessage(`Edit ${isBooking ? 'booking' : 'slot'} ${id}`)} className="text-sm font-semibold text-gray-700 hover:text-blue-600 transition-colors">
+                <button onClick={() => sendMessage(`Edit ${isBooking ? 'booking' : 'slot'} ${id}`)} className="text-sm font-semibold text-gray-700 hover:text-blue-600 hover:scale-[1.05] active:scale-[0.95] transition-all duration-200">
                   Edit {isBooking ? 'Booking' : 'Slot'}
                 </button>
                 <div className="w-[1px] h-4 bg-gray-100 self-center" />
-                <button onClick={() => sendMessage(`Delete ${isBooking ? 'booking' : 'slot'} ${id}`)} className="text-sm font-semibold text-red-500 hover:text-red-700 transition-colors">
+                <button onClick={() => sendMessage(`Delete ${isBooking ? 'booking' : 'slot'} ${id}`)} className="text-sm font-semibold text-red-500 hover:text-red-700 hover:scale-[1.05] active:scale-[0.95] transition-all duration-200">
                   Delete {isBooking ? 'Booking' : 'Slot'}
                 </button>
               </div>
@@ -143,7 +156,10 @@ export const ChatInterface: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] bg-white max-w-5xl mx-auto w-full p-6 relative">
+    <div 
+      className="flex flex-col h-[calc(100vh-64px)] bg-white max-w-5xl mx-auto w-full px-6 py-2 relative"
+      onClick={() => inputRef.current?.focus()}
+    >
 
       {/* Confirmation Modal */}
       {showConfirm && (
@@ -171,9 +187,12 @@ export const ChatInterface: React.FC = () => {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex justify-between items-center px-4 pb-4 border-b border-gray-100 mb-4">
-        <h2 className="text-lg font-semibold text-gray-800">Mirror Assistant</h2>
+      {/* Header - Reduced padding and font size as requested */}
+      <div className="flex justify-between items-center px-4 pb-2 border-b border-gray-100 mb-2">
+        <div className="flex items-center space-x-2">
+          <div className="w-1 h-5 bg-green-500 rounded-full"></div>
+          <h2 className="text-lg font-semibold text-gray-800 tracking-tight">Mirror Assistant</h2>
+        </div>
         <button
           onClick={handleNewChatClick}
           className="text-sm text-gray-500 hover:text-blue-600 font-medium px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
@@ -182,8 +201,8 @@ export const ChatInterface: React.FC = () => {
         </button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto space-y-6 px-4">
+      {/* Messages - Tightened spacing */}
+      <div className="flex-1 overflow-y-auto space-y-4 px-4">
         {messages.map((msg, index) => (
           <div key={index} className="flex flex-col">
             <div className={`flex items-start space-x-3 ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
@@ -224,11 +243,11 @@ export const ChatInterface: React.FC = () => {
 
         {isLoading && (
           <div className="flex items-start space-x-3">
-            <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-bold">M</div>
-            <div className="flex space-x-1 py-3">
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" />
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-75" />
-              <div className="w-2 h-2 bg-gray-300 rounded-full animate-bounce delay-150" />
+            <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-xs font-bold">M</div>
+            <div className="flex space-x-1.5 py-4 px-1">
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce"></div>
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce delay-75"></div>
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce delay-150"></div>
             </div>
           </div>
         )}
@@ -244,15 +263,15 @@ export const ChatInterface: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-gray-100 mt-4">
-        <form onSubmit={handleSubmit} className="flex items-center space-x-3 bg-white rounded-xl px-4 py-2 border border-gray-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:bg-white transition-all">
+      {/* Input - More compact vertically */}
+      <div className="p-3 border-t border-gray-100 mt-2">
+        <form onSubmit={handleSubmit} className="flex items-center space-x-3 bg-white rounded-xl px-4 py-1.5 border border-gray-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:bg-white transition-all">
           <button type="button" className="text-gray-400 hover:text-gray-600">🎤</button>
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            disabled={isLoading}
             placeholder="Write message"
             className="flex-1 bg-white text-black border-none focus:ring-0 text-sm py-2 outline-none"
           />
@@ -262,13 +281,19 @@ export const ChatInterface: React.FC = () => {
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 transition-colors disabled:opacity-50"
+              className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center space-x-2 transition-all hover:shadow-lg hover:shadow-green-100 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:shadow-none disabled:scale-100"
             >
               <span>Send</span>
               <span>✈️</span>
             </button>
           </div>
         </form>
+        <div className="mt-4 flex flex-col items-center">
+          <div className="w-full h-[1px] bg-gray-100 mb-2" />
+          <p className="text-[10px] text-gray-400 italic tracking-tight">
+            Assistant can make mistakes. Please cross-check important information.
+          </p>
+        </div>
       </div>
     </div>
   );
