@@ -23,7 +23,7 @@ class ScheduleRepository:
             .eq("date", date_str)\
             .order("start_time")\
             .execute()
-
+    
     @staticmethod
     def get_slot_by_id(db: Client, slot_id: UUID):
         return db.table("availability_slots")\
@@ -36,5 +36,12 @@ class ScheduleRepository:
     def update_slot_status(db: Client, slot_id: UUID, status: str):
         return db.table("availability_slots")\
             .update({"status": status})\
+            .eq("slot_id", str(slot_id))\
+            .execute()
+
+    @staticmethod
+    def update_slot(db: Client, slot_id: UUID, update_data: dict):
+        return db.table("availability_slots")\
+            .update(update_data)\
             .eq("slot_id", str(slot_id))\
             .execute()

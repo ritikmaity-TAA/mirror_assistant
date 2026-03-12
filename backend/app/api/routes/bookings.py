@@ -68,11 +68,11 @@ def cancel_booking(booking_id: UUID, db: Client = Depends(get_supabase_client)):
             detail="Internal Server Error: Cancellation failed."
         )
 
-# # Extra utility for the Professional's Dashboard
-# @router.get("/upcoming/{professional_id}", response_model=dict)
-# def get_upcoming_bookings(professional_id: UUID, db: Client = Depends(get_supabase_client)):
-#     try:
-#         return BookingService.get_upcoming_bookings(db, professional_id)
-#     except Exception as e:
-#         logger.error(f"Failed to fetch upcoming bookings for {professional_id}: {str(e)}")
-#         raise HTTPException(status_code=500, detail="Could not retrieve upcoming bookings.")
+# Extra utility for the Professional's Dashboard
+@router.get("/upcoming/{professional_id}", response_model=dict)
+def get_upcoming_bookings(professional_id: UUID, db: Client = Depends(get_supabase_client)):
+    try:
+        return BookingService.get_upcoming_bookings(db, professional_id)
+    except Exception as e:
+        logger.error(f"Failed to fetch upcoming bookings for {professional_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Could not retrieve upcoming bookings.")

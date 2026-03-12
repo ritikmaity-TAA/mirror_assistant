@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import time
 from fastapi import HTTPException
 from schemas.booking import BookingCreate, BookingUpdate
 from core.constants import ErrorMessages, SlotStatus, BookingStatus
@@ -6,6 +7,18 @@ from db.repositories.booking_repository import BookingRepository
 from db.repositories.schedule_repository import ScheduleRepository
 from utils.validators import generate_uuid
 from supabase import Client
+
+
+def _to_time(t: str) -> time:
+    """
+    Parses a time string of either HH:MM or HH:MM:SS into a datetime.time object.
+    Ensures all comparisons are time-aware, not lexicographic string comparisons.
+    """
+    parts = t.split(":")
+    hour, minute = int(parts[0]), int(parts[1])
+    second = int(parts[2]) if len(parts) == 3 else 0
+    return time(hour, minute, second)
+
 
 class BookingService:
     @staticmethod
@@ -18,9 +31,12 @@ class BookingService:
         if not parent_slot or parent_slot.get('status') != SlotStatus.AVAILABLE:
             raise HTTPException(status_code=400, detail=ErrorMessages.SLOT_UNAVAILABLE)
 
-        # 2. Extract Times for Comparison
-        t_start, t_end = parent_slot['start_time'], parent_slot['end_time']
-        b_start, b_end = booking.start_time, booking.end_time
+        # 2. Extract Times for Comparison — parsed to time objects to handle
+        #    mixed HH:MM (LLM) vs HH:MM:SS (DB) formats safely
+        t_start = _to_time(parent_slot['start_time'])
+        t_end   = _to_time(parent_slot['end_time'])
+        b_start = _to_time(booking.start_time)
+        b_end   = _to_time(booking.end_time)
 
         # 3. Check for overlapping bookings (Req 11.b)
         overlap = BookingRepository.get_bookings_by_professional_and_date(
@@ -28,7 +44,7 @@ class BookingService:
         )
         for b in overlap.data:
             if b.get('status') != BookingStatus.CANCELLED:
-                if (b_start < b['end_time']) and (b_end > b['start_time']):
+                if (b_start < _to_time(b['end_time'])) and (b_end > _to_time(b['start_time'])):
                     raise HTTPException(status_code=409, detail="Time conflict with an existing booking.")
 
         # --- SMART FIX: SLOT SPLITTING LOGIC ---
@@ -39,8 +55,8 @@ class BookingService:
                 "slot_id": generate_uuid(),
                 "professional_id": str(parent_slot['professional_id']),
                 "date": parent_slot['date'],
-                "start_time": t_start,
-                "end_time": b_start,
+                "start_time": t_start.strftime("%H:%M:%S"),
+                "end_time": b_start.strftime("%H:%M:%S"),
                 "status": SlotStatus.AVAILABLE
             }
             ScheduleRepository.create_slot(db, before_data)
@@ -52,16 +68,16 @@ class BookingService:
                 "slot_id": generate_uuid(),
                 "professional_id": str(parent_slot['professional_id']),
                 "date": parent_slot['date'],
-                "start_time": b_end,
-                "end_time": t_end,
+                "start_time": b_end.strftime("%H:%M:%S"),
+                "end_time": t_end.strftime("%H:%M:%S"),
                 "status": SlotStatus.AVAILABLE
             }
             ScheduleRepository.create_slot(db, after_data)
 
         # 6. Update the Parent Slot to match the Booking exactly and mark as BOOKED
         update_payload = {
-            "start_time": b_start,
-            "end_time": b_end,
+            "start_time": b_start.strftime("%H:%M:%S"),
+            "end_time": b_end.strftime("%H:%M:%S"),
             "status": SlotStatus.BOOKED
         }
         ScheduleRepository.update_slot(db, str(booking.slot_id), update_payload)
@@ -75,16 +91,53 @@ class BookingService:
 
     @staticmethod
     def cancel_booking(db: Client, booking_id: UUID):
-        res = BookingRepository.get_booking_by_id(db, str(booking_id))
-        booking = res.data[0] if isinstance(res.data, list) else res.data
-        
+        booking = BookingRepository.get_booking_by_id(db, str(booking_id))
+
         if not booking:
             raise HTTPException(status_code=404, detail="invalid booking identifier")
 
-        # Reopen slot so it's available again
-        ScheduleRepository.update_slot_status(db, str(booking['slot_id']), SlotStatus.AVAILABLE)
+        slot_id        = str(booking['slot_id'])
+        professional_id = str(booking['professional_id'])
+        date           = booking['date']
+        booked_start   = _to_time(booking['start_time'])
+        booked_end     = _to_time(booking['end_time'])
+
+        # Find all AVAILABLE fragments on the same date for this professional.
+        # Adjacent fragments are ones that touch the booked slot's boundary exactly.
+        all_slots = ScheduleRepository.get_slots_by_professional_and_date(
+            db, professional_id, date
+        )
+        fragment_ids = []
+        merged_start = booked_start
+        merged_end   = booked_end
+
+        for s in all_slots.data:
+            if s['slot_id'] == slot_id:
+                continue
+            if s.get('status') != SlotStatus.AVAILABLE:
+                continue
+            s_start = _to_time(s['start_time'])
+            s_end   = _to_time(s['end_time'])
+            # Adjacent if it ends exactly where booked slot starts (before-fragment)
+            # or starts exactly where booked slot ends (after-fragment)
+            if s_end == booked_start or s_start == booked_end:
+                fragment_ids.append(s['slot_id'])
+                merged_start = min(merged_start, s_start)
+                merged_end   = max(merged_end, s_end)
+
+        # Expand the booked slot to cover the merged window and mark AVAILABLE
+        ScheduleRepository.update_slot(db, slot_id, {
+            "start_time": merged_start.strftime("%H:%M:%S"),
+            "end_time":   merged_end.strftime("%H:%M:%S"),
+            "status":     SlotStatus.AVAILABLE
+        })
+
+        # Delete orphaned fragments (safe: no bookings reference them)
+        for fid in fragment_ids:
+            ScheduleRepository.delete_slot(db, fid)
+
         BookingRepository.update_booking_status(db, str(booking_id), BookingStatus.CANCELLED)
-        
+
         return {
             "success_state": True,
             "cancellation_state": BookingStatus.CANCELLED,
@@ -100,4 +153,4 @@ class BookingService:
     @staticmethod
     def get_upcoming_bookings(db: Client, professional_id: UUID):
         result = BookingRepository.get_upcoming_bookings(db, str(professional_id))
-        return {"professional_id": str(professional_id), "entries": result.data}
+        return {"professional_id": str(professional_id), "entries": result.data}    

@@ -24,21 +24,24 @@ class ChatbotRepository:
             return False
 
     @staticmethod
-    def get_session_history(db: Client, session_id: str, limit: int = 10) -> List[Dict[str, str]]:
-        """Fetches the last N messages for this specific session."""
+    def get_session_history(db: Client, session_id: str, professional_id: UUID, limit: int = 10) -> List[Dict[str, str]]:
+        """Fetches the last N messages for this specific session scoped to the professional.
+        Filtering on both session_id AND professional_id prevents cross-professional
+        history leakage in the unlikely event of a session_id collision.
+        """
         try:
-            # FORCE SESSION_ID TO STRING IN THE .EQ() FILTER
             response = db.table("chat_history") \
                 .select("role, content") \
                 .eq("session_id", str(session_id)) \
+                .eq("professional_id", str(professional_id)) \
                 .order("created_at", desc=True) \
                 .limit(limit) \
                 .execute()
-            
+
             # Reverse the list so it's chronologically correct (oldest -> newest)
             messages = response.data[::-1] if response.data else []
             return messages
-            
+
         except Exception as e:
             logger.error(f"Failed to fetch chat history: {str(e)}")
             return []

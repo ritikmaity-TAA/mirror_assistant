@@ -1,6 +1,6 @@
 import re
 import logging
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta, timezone
 from typing import Union
 
 def normalize_datetime(text: str) -> dict | None:
@@ -23,9 +23,9 @@ def _parse_relative_day(text: str) -> date | None:
     if re.search(r"\btoday\b", text):
         return today
     if re.search(r"\btomorrow\b", text):
-        return today.replace(day=today.day + 1)
+        return today + timedelta(days=1)
     if re.search(r"day after tomorrow", text):
-        return today.replace(day=today.day + 2)
+        return today + timedelta(days=2)
     return None
 
 def _parse_weekday(text: str) -> date | None:
@@ -36,16 +36,16 @@ def _parse_weekday(text: str) -> date | None:
         if f"next {wd}" in text:
             days_ahead = (i - today.weekday() + 7) % 7
             days_ahead = days_ahead or 7
-            return today.replace(day=today.day + days_ahead)
+            return today + timedelta(days=days_ahead)
         # this monday, this friday, etc.
         if f"this {wd}" in text:
             days_ahead = (i - today.weekday()) % 7
-            return today.replace(day=today.day + days_ahead)
+            return today + timedelta(days=days_ahead)
         # just 'monday', 'friday', etc.
         if re.search(rf"\b{wd}\b", text):
             days_ahead = (i - today.weekday() + 7) % 7
             days_ahead = days_ahead or 7
-            return today.replace(day=today.day + days_ahead)
+            return today + timedelta(days=days_ahead)
     return None
 
 def _parse_time(text: str) -> str | None:
