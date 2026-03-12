@@ -1,3 +1,4 @@
+// use chats
 import { useState } from 'react';
 import { ChatMessage, ChatResponse } from '@/types/chatbot';
 import { ChatbotService } from '@/services/chatbot.service';
