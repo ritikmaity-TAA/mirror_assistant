@@ -96,7 +96,7 @@ PRODUCTION_TOOLS = [
                     "date": {"type": "string", "description": "Date in YYYY-MM-DD format."},
                     "start_time": {"type": "string", "description": "Start time in HH:MM format."},
                     "end_time": {"type": "string", "description": "End time in HH:MM format."},
-                    "booking_note": {"type": "string", "description": "A concise summary of the booking purpose. If the user provided a reason (e.g., 'follow-up', 'anxiety check-in'), use that. If no reason was given, describe the duration with client name(e.g., 'Standard 60-min session with John')."}
+                    "booking_note": {"type": "string", "description": "A concise summary of the booking purpose. If the user provided a reason (e.g., 'follow-up', 'anxiety check-in'), use that. If no reason was given, describe the duration with client name(e.g., '60-min session with John')."}
                 },
                 "required": ["client_id", "slot_id", "date", "start_time", "end_time"],
             },
@@ -142,7 +142,7 @@ class WorkflowManager:
             "Under no circumstances are you to act as a general-purpose AI, a therapist, or a clinical advisor.\n\n"
 
             "### STRICT GUARDRAILS & BOUNDARIES (CRITICAL):\n"
-            "1. STAY ON TOPIC: You must strictly refuse to discuss anything outside of schedule and booking management. NEVER ANSWER BEYOND THAT SCOPE !.\n"
+            "1. STAY ON TOPIC: You must strictly refuse to discuss anything outside of schedule and booking management & Client info. NEVER ANSWER BEYOND THAT SCOPE !.\n"
             "2. NO CLINICAL OR MEDICAL ADVICE: You are an administrative tool. You must never offer mental health advice, comment on a client's condition, or discuss clinical treatments.\n"
             "3. NO OPINIONS OR CONTROVERSY: Do not engage in any controversial, subjective, or harmful conversations.\n"
             "4. OUT-OF-BOUNDS SCRIPT: If the user asks an out-of-bounds question, deny to respond gently but firmly.\n"
@@ -157,6 +157,17 @@ class WorkflowManager:
             "3. THE SLOT CREATION FLOW: If asked to open a new slot, always respect existing appointments. If a tool returns a 409 Overlap error, DO NOT blindly retry. Stop, explain the conflict to the professional, and ask how they want to proceed.\n"
             "4. CANCELLATIONS & RESCHEDULING: To cancel or reschedule, first verify the existing appointment using tools before executing delete or create actions.\n\n"
 
+           "### SLOTS, SESSION DURATION & MULTI-HOUR BOOKINGS (CRITICAL):\n"
+            "- THE 60-MINUTE POLICY: All client sessions are 60-minute blocks. You MUST NEVER call `create_booking` with a duration longer than 60 minutes.\n"
+            "- MULTI-HOUR REQUESTS (ASK FIRST): If a user asks for a multi-hour booking (e.g., 'Book a 2-hour session'), DO NOT make any bookings yet. You MUST stop, explain the 1-hour policy, and ask: 'Would you like me to book consecutive 1-hour sessions instead?' Wait for their explicit 'yes' or approval.\n"
+            "- MULTI-HOUR REQUESTS: Once the user approves consecutive sessions, you MUST book them sequentially to avoid database ID conflicts:\n"
+            "    - Step 1: Fetch the schedule and find the `slot_id` for the block.\n"
+            "    - Step 2: Call `create_booking` for ONLY the first 60 minutes (e.g., 5 PM to 6 PM).\n"
+            "    - Step 3: CRITICAL: Call `get_day_schedule` AGAIN. The database just split the remaining time into a brand new slot with a NEW `slot_id`. You must fetch this new ID.\n"
+            "    - Step 4: Call `create_booking` for the second 60 minutes (e.g., 6 PM to 7 PM) using the NEW `slot_id`.\n"
+            "    - Step 5: Repeat this fetch-and-book cycle for as many hours as requested.\n"
+            "- TRUTH IN TEXT: When confirming a booking, report the exact `start_time` and `end_time` passed to the tool.\n\n"
+            
             "### ID PRIVACY & AMBIGUITY:\n"
             "- NEVER display raw UUIDs (client_id, slot_id, booking_id) to the user in your text responses.\n"
             "- THE ONLY EXCEPTION: If `search_client_by_name` returns multiple clients with the exact same name, you MUST display their names and IDs to ask the professional to confirm which one.\n"
@@ -241,7 +252,7 @@ class WorkflowManager:
         # Generate the tool routing map once per request
         tool_map = self._get_tool_map(db, professional_id)
 
-        #We store the whole tool dictionary to extract metadata later
+        # We store the whole tool dictionary to extract metadata later
         executed_tools_history: List[Dict[str, Any]] = []
         iteration = 0
 
@@ -287,14 +298,16 @@ class WorkflowManager:
 
             # Final Processing
             final_reply = response.choices[0].message.content
-            
+
             if not final_reply:
                 if executed_tools_history:
-                    last_action = executed_tools_history[-1]["name"].replace("_", " ")
-                    
+                    last_action = executed_tools_history[-1]["name"].replace(
+                        "_", " ")
+
                     # Look at the actual tool response injected into the messages array
-                    last_tool_msg = next((m for m in reversed(messages) if m["role"] == "tool"), None)
-                    
+                    last_tool_msg = next((m for m in reversed(
+                        messages) if m["role"] == "tool"), None)
+
                     if last_tool_msg and "error" in last_tool_msg.get("content", ""):
                         # The tool failed! Don't lie to the user.
                         final_reply = f"I tried to {last_action}, but I encountered a validation error. Let me know if you'd like to adjust the details and try again."
