@@ -11,6 +11,8 @@ from supabase import Client
 class BookingService:
     @staticmethod
     def create_booking(db: Client, booking: BookingCreate):
+        booking.start_time = booking.start_time[:5]
+        booking.end_time = booking.end_time[:5]
         # 0. Past-Time Validation (Mandatory Rule)
         if is_past_datetime(booking.date, booking.start_time):
             raise HTTPException(status_code=400, detail="Cannot create a booking for a time that has already passed.")
@@ -22,7 +24,7 @@ class BookingService:
         if not parent_slot or parent_slot.get('status') != SlotStatus.AVAILABLE:
             raise HTTPException(status_code=400, detail=ErrorMessages.SLOT_UNAVAILABLE)
 
-        # 2. CEO RULE: Force 50 mins session + 10 mins buffer (60 mins total block)
+        # 2. Force 50 mins session + 10 mins buffer (60 mins total block)
         work_end, total_block_end = calculate_time_block(booking.start_time)
         
         t_start, t_end = parent_slot['start_time'], parent_slot['end_time']
