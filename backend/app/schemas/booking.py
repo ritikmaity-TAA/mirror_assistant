@@ -20,7 +20,7 @@ class BookingBase(BaseModel):
     start_time: str # HH:MM:SS
     end_time: str   # HH:MM:SS
     status: BookingStatusEnum = BookingStatusEnum.SCHEDULED
-    booking_note: Optional[str] = None
+    booking_note: Optional[str] = ""
 
 class BookingCreate(BookingBase):
     pass

@@ -34,7 +34,8 @@ class ScheduleRepository:
 
     @staticmethod
     def update_slot_status(db: Client, slot_id: UUID, status: str):
+        payload = status if isinstance(status, dict) else {"status": status}
         return db.table("availability_slots")\
-            .update({"status": status})\
+            .update(payload)\
             .eq("slot_id", str(slot_id))\
             .execute()

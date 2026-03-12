@@ -64,7 +64,7 @@ class BookingService:
             "end_time": b_end,
             "status": SlotStatus.BOOKED
         }
-        ScheduleRepository.update_slot(db, str(booking.slot_id), update_payload)
+        ScheduleRepository.update_slot_status(db, str(booking.slot_id), update_payload)
 
         # 7. Create the actual Booking Record
         booking_payload = booking.model_dump(mode="json")

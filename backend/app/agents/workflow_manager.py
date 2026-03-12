@@ -96,7 +96,7 @@ PRODUCTION_TOOLS = [
                     "date": {"type": "string", "description": "Date in YYYY-MM-DD format."},
                     "start_time": {"type": "string", "description": "Start time in HH:MM format."},
                     "end_time": {"type": "string", "description": "End time in HH:MM format."},
-                    "booking_note": {"type": "string", "description": "Optional notes for the booking."}
+                    "booking_note": {"type": "string", "description": "A concise summary of the booking purpose. If the user provided a reason (e.g., 'follow-up', 'anxiety check-in'), use that. If no reason was given, describe the duration with client name(e.g., 'Standard 60-min session with John')."}
                 },
                 "required": ["client_id", "slot_id", "date", "start_time", "end_time"],
             },
@@ -286,7 +286,23 @@ class WorkflowManager:
                 )
 
             # Final Processing
-            final_reply = response.choices[0].message.content or "I have processed your request."
+            final_reply = response.choices[0].message.content
+            
+            if not final_reply:
+                if executed_tools_history:
+                    last_action = executed_tools_history[-1]["name"].replace("_", " ")
+                    
+                    # Look at the actual tool response injected into the messages array
+                    last_tool_msg = next((m for m in reversed(messages) if m["role"] == "tool"), None)
+                    
+                    if last_tool_msg and "error" in last_tool_msg.get("content", ""):
+                        # The tool failed! Don't lie to the user.
+                        final_reply = f"I tried to {last_action}, but I encountered a validation error. Let me know if you'd like to adjust the details and try again."
+                    else:
+                        # The tool succeeded.
+                        final_reply = f"I have successfully completed the {last_action} action for you. Is there anything else you need?"
+                else:
+                    final_reply = "I'm sorry, I couldn't process that request properly."
 
             tool_names_only = [t["name"] for t in executed_tools_history]
             intent = intent_parser.determine_intent(tool_names_only)
@@ -298,7 +314,7 @@ class WorkflowManager:
             return response_builder.build(
                 reply="I encountered an internal error trying to process your request.",
                 intent="error",
-                tools_executed=False
+                executed_tools=[]
             )
 
 

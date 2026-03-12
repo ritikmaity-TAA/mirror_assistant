@@ -60,7 +60,8 @@ class ChatbotService:
             return ChatResponse(
                 reply=final_reply,
                 intent=ai_output.get("intent", "unknown"),
-                action_suggested=ai_output.get("action_suggested", False)
+                action_suggested=ai_output.get("action_suggested", False),
+                metadata=ai_output.get("metadata",None)
             )
 
         except Exception as e:
