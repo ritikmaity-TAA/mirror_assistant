@@ -177,7 +177,8 @@ class WorkflowManager:
 
             "### STRICT FORMATTING RULES:\n"
             "- Always bold **Dates**, **Times**, and **Client Names** so they are predictable for the user to read.\n"
-            "- Use html tags whenever user is asking to view information regarding slots, schedules, bookings or clients.\n"
+            "- NEVER write HTML tags in your reply under any circumstances. No <table>, <div>, <ul>, <li>, or any other tag. Your reply must be plain text only.\n"
+            "- When displaying slots, schedules, bookings, or client info: write ONE short plain-text sentence confirming what you found (e.g. 'Here are your upcoming bookings.' or 'Here is your schedule for **March 14**.'). The frontend renders the structured data automatically — you do not need to list or format the data yourself.\n"
             "- Tone: Professional, warm, concise, and reassuring. Keep sentences structured and avoid conversational fluff."
         )
 
@@ -254,8 +255,9 @@ class WorkflowManager:
         # Generate the tool routing map once per request
         tool_map = self._get_tool_map(db, professional_id)
 
-        # We store the whole tool dictionary to extract metadata later
+        # Parallel lists: executed_tools_history[i] ↔ tool_results[i]
         executed_tools_history: List[Dict[str, Any]] = []
+        tool_results: List[Any] = []      # raw Python objects (pre-JSON-serialisation)
         iteration = 0
 
         try:
@@ -282,6 +284,13 @@ class WorkflowManager:
 
                     # Offload the try/catch logic to our new isolated helper method
                     result_str = await self._execute_tool(tool_call, tool_map)
+
+                    # Keep raw result so ResponseBuilder can build display payloads
+                    try:
+                        import json as _json
+                        tool_results.append(_json.loads(result_str))
+                    except Exception:
+                        tool_results.append(result_str)
 
                     messages.append({
                         "role": "tool",
@@ -322,14 +331,20 @@ class WorkflowManager:
             tool_names_only = [t["name"] for t in executed_tools_history]
             intent = intent_parser.determine_intent(tool_names_only)
 
-            return response_builder.build(final_reply, intent, executed_tools_history)
+            return response_builder.build(
+                reply=final_reply,
+                intent=intent,
+                executed_tools=executed_tools_history,
+                tool_results=tool_results,
+            )
 
         except Exception as e:
             logger.error(f"WorkflowManager Error: {str(e)}")
             return response_builder.build(
                 reply="I encountered an internal error trying to process your request.",
                 intent="error",
-                executed_tools=[]
+                executed_tools=[],
+                tool_results=[],
             )
 
 

@@ -1,47 +1,258 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useChat } from '@/hooks/useChat';
 import { useAppContext } from '@/context/app-context';
+import {
+  DisplayPayload,
+  SlotDisplayItem,
+  BookingDisplayItem,
+  ClientSearchItem,
+} from '@/types/chatbot';
+
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const fmt12 = (t: string) => {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
+};
+
+const fmtDate = (d: string) => {
+  if (!d) return '';
+  const [y, mo, day] = d.split('-');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[Number(mo) - 1]} ${Number(day)}, ${y}`;
+};
+
+const statusColor = (s = '') => {
+  const st = s.toLowerCase();
+  if (st === 'available')  return 'bg-emerald-50 text-emerald-700';
+  if (st === 'booked')     return 'bg-blue-50 text-blue-700';
+  if (st === 'cancelled')  return 'bg-red-50 text-red-700';
+  if (st === 'scheduled')  return 'bg-indigo-50 text-indigo-700';
+  if (st === 'completed')  return 'bg-gray-100 text-gray-600';
+  return 'bg-gray-100 text-gray-600';
+};
+
+
+
+// ---------------------------------------------------------------------------
+// Card components
+// ---------------------------------------------------------------------------
+
+const SlotCard: React.FC<{ item: SlotDisplayItem; onAction: (msg: string) => void }> = ({ item, onAction }) => (
+  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
+    <div className="px-5 py-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-gray-800">
+          {fmt12(item.start_time)} – {fmt12(item.end_time)}
+        </span>
+        <span className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${statusColor(item.status)}`}>
+          {item.status}
+        </span>
+      </div>
+      <p className="text-xs text-gray-400 mt-1">{fmtDate(item.date)}</p>
+    </div>
+    {item.status === 'available' && (
+      <div className="border-t border-gray-50 px-5 py-3 flex gap-4">
+        <button
+          onClick={() => onAction(`Delete slot ${item.slot_id}`)}
+          className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors"
+        >
+          Delete Slot
+        </button>
+      </div>
+    )}
+  </div>
+);
+
+const BookingCard: React.FC<{ item: BookingDisplayItem; onAction: (msg: string) => void }> = ({ item, onAction }) => {
+  // client_name is flattened by the backend ResponseBuilder from the Supabase join.
+  // No async fetch needed.
+  const clientName = item.client_name ?? '';
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
+      <div className="px-5 py-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">
+              {clientName || 'Unknown Client'}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {fmt12(item.start_time)} – {fmt12(item.end_time)}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">{fmtDate(item.date)}</p>
+          </div>
+          <span className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full shrink-0 ${statusColor(item.status)}`}>
+            {item.status ?? 'scheduled'}
+          </span>
+        </div>
+        {item.note && (
+          <p className="mt-2 text-xs text-gray-400 italic truncate">"{item.note}"</p>
+        )}
+      </div>
+      <div className="border-t border-gray-50 px-5 py-3 flex gap-4">
+        <button
+          onClick={() => onAction(`Cancel booking ${item.booking_id}`)}
+          className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const ConfirmationCard: React.FC<{ type: 'success' | 'delete'; title: string; subtitle?: string }> = ({ type, title, subtitle }) => (
+  <div className={`rounded-2xl border px-5 py-4 flex items-start gap-3 ${type === 'success' ? 'bg-emerald-50 border-emerald-100' : 'bg-red-50 border-red-100'}`}>
+    <span className="text-lg">{type === 'success' ? '✅' : '🗑️'}</span>
+    <div>
+      <p className={`text-sm font-semibold ${type === 'success' ? 'text-emerald-800' : 'text-red-800'}`}>{title}</p>
+      {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+    </div>
+  </div>
+);
+
+const ClientSearchCard: React.FC<{ items: ClientSearchItem[]; onSelect: (msg: string) => void }> = ({ items, onSelect }) => (
+  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="px-5 py-3 border-b border-gray-50">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Multiple clients found</p>
+    </div>
+    <div className="divide-y divide-gray-50">
+      {items.map((c) => (
+        <button
+          key={c.client_id}
+          onClick={() => onSelect(`Use client ${c.client_id} — ${c.name}`)}
+          className="w-full text-left px-5 py-3 hover:bg-gray-50 transition-colors"
+        >
+          <p className="text-sm font-medium text-gray-800">{c.name}</p>
+          <p className="text-[10px] text-gray-400 font-mono mt-0.5">{c.client_id}</p>
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+// ---------------------------------------------------------------------------
+// Main display renderer — reads metadata.display, never parses reply string
+// ---------------------------------------------------------------------------
+
+const DisplayRenderer: React.FC<{ display: DisplayPayload; onAction: (msg: string) => void }> = ({ display, onAction }) => {
+  const { type, items = [], item } = display;
+
+  if (type === 'day_schedule') {
+    const slots = items as SlotDisplayItem[];
+    if (!slots.length) return <p className="text-xs text-gray-400 italic ml-1">No slots found for this date.</p>;
+    return (
+      <div className="grid grid-cols-1 gap-3 mt-3">
+        {slots.map((s) => <SlotCard key={s.slot_id} item={s} onAction={onAction} />)}
+      </div>
+    );
+  }
+
+  if (type === 'booking_list') {
+    const bookings = items as BookingDisplayItem[];
+    if (!bookings.length) return <p className="text-xs text-gray-400 italic ml-1">No upcoming bookings.</p>;
+    return (
+      <div className="grid grid-cols-1 gap-3 mt-3">
+        {bookings.map((b) => <BookingCard key={b.booking_id} item={b} onAction={onAction} />)}
+      </div>
+    );
+  }
+
+  if (type === 'booking_created') {
+    const b = item as BookingDisplayItem | undefined;
+    return (
+      <div className="mt-3">
+        <ConfirmationCard
+          type="success"
+          title="Booking confirmed"
+          subtitle={b ? `${fmtDate(b.date ?? '')}  •  ${fmt12(b.start_time ?? '')} – ${fmt12(b.end_time ?? '')}` : undefined}
+        />
+      </div>
+    );
+  }
+
+  if (type === 'slot_created') {
+    const s = item as SlotDisplayItem | undefined;
+    return (
+      <div className="mt-3">
+        <ConfirmationCard
+          type="success"
+          title="Slot opened"
+          subtitle={s ? `${fmtDate(s.date ?? '')}  •  ${fmt12(s.start_time ?? '')} – ${fmt12(s.end_time ?? '')}` : undefined}
+        />
+      </div>
+    );
+  }
+
+  if (type === 'booking_cancelled') {
+    return <div className="mt-3"><ConfirmationCard type="delete" title="Booking cancelled" /></div>;
+  }
+
+  if (type === 'slot_deleted') {
+    return <div className="mt-3"><ConfirmationCard type="delete" title="Slot removed" /></div>;
+  }
+
+  if (type === 'client_search') {
+    const clients = items as ClientSearchItem[];
+    return (
+      <div className="mt-3">
+        <ClientSearchCard items={clients} onSelect={onAction} />
+      </div>
+    );
+  }
+
+  return null;
+};
+
+// ---------------------------------------------------------------------------
+// Inline text renderer — bold (**) and code (`) only
+// ---------------------------------------------------------------------------
+
+const renderText = (text: string, baseKey: string) => {
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((part, index) => {
+    const key = `${baseKey}-${index}`;
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={key} className="font-semibold text-gray-900">{part.slice(2, -2)}</strong>;
+    if (part.startsWith('`') && part.endsWith('`'))
+      return <code key={key} className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 font-mono text-xs border border-gray-200">{part.slice(1, -1)}</code>;
+    return part;
+  });
+};
+
+// ---------------------------------------------------------------------------
+// ChatInterface
+// ---------------------------------------------------------------------------
 
 export const ChatInterface: React.FC = () => {
   const { messages, isLoading, error, sendMessage, setMessages } = useChat();
   const { professionalName, resetSession } = useAppContext();
 
-  const [input, setInput]                   = useState('');
-  const [showConfirm, setShowConfirm]       = useState(false);
-  const messagesEndRef                      = useRef<HTMLDivElement>(null);
-  const inputRef                            = useRef<HTMLInputElement>(null);
+  const [input, setInput]             = useState('');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const messagesEndRef                = useRef<HTMLDivElement>(null);
+  const inputRef                      = useRef<HTMLInputElement>(null);
 
   const getInitials = (name: string) =>
     name.split(' ').map((n) => n[0]).join('').toUpperCase();
 
-  const scrollToBottom = () =>
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { if (!isLoading) inputRef.current?.focus(); }, [messages, isLoading]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
-
-  // Auto-focus input on mount
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  // Re-focus after message sent or navigation
-  useEffect(() => {
-    if (!isLoading) {
-      inputRef.current?.focus();
-    }
-  }, [messages, isLoading]);
-
-  // Only set initial greeting if messages are genuinely empty
-  // (won't fire on navigation back since context already has messages)
   useEffect(() => {
     if (messages.length === 0) {
       setMessages([{ role: 'assistant', content: 'How can I help you today?' }]);
     }
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,14 +263,9 @@ export const ChatInterface: React.FC = () => {
     await sendMessage(currentInput);
   };
 
-  // Confirmation modal — "Proceed" calls resetSession which wipes
-  // both in-memory state and sessionStorage.
-  const handleNewChatClick  = () => setShowConfirm(true);
-  const handleCancelNewChat = () => setShowConfirm(false);
-  const handleConfirmNewChat = () => {
-    setShowConfirm(false);
-    resetSession();
-  };
+  const handleAction = useCallback((msg: string) => { sendMessage(msg); }, [sendMessage]);
+
+  const handleConfirmNewChat = () => { setShowConfirm(false); resetSession(); };
 
   const menuOptions = [
     {
@@ -72,151 +278,15 @@ export const ChatInterface: React.FC = () => {
     },
     {
       title: 'View Schedule',
-      options: [
-        "View today's schedule",
-        'View schedule by date',
-        'View schedule by client',
-        'View upcoming bookings',
-      ],
+      options: ["View today's schedule", 'View schedule by date', 'View schedule by client', 'View upcoming bookings'],
     },
   ];
 
-  const renderText = (text: string, baseKey: string) => {
-    const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
-    return parts.map((part, index) => {
-      const key = `${baseKey}-${index}`;
-      if (part.startsWith('**') && part.endsWith('**'))
-        return <strong key={key} className="font-bold text-gray-900">{part.slice(2, -2)}</strong>;
-      if (part.startsWith('`') && part.endsWith('`'))
-        return <code key={key} className="bg-gray-100 px-1.5 py-0.5 rounded text-blue-600 font-mono text-xs border border-gray-200">{part.slice(1, -1)}</code>;
-      return part;
-    });
-  };
-
-  const renderTableAsCards = (tableText: string, key: string) => {
-    const lines = tableText.trim().split('\n');
-    if (lines.length < 3) return renderText(tableText, key);
-    const rawHeaders = lines[0].split('|').map((h) => h.trim()).filter(Boolean);
-    const rows = lines.slice(2).map((row) => {
-      const cells = row.split('|').map((c) => c.trim()).filter(Boolean);
-      const rowObj: any = {};
-      rawHeaders.forEach((header, i) => { rowObj[header.toLowerCase()] = cells[i]; });
-      return rowObj;
-    });
-    return (
-      <div key={key} className="grid grid-cols-1 gap-4 my-4 ml-11">
-        {rows.map((row, i) => {
-          const start     = row['start'] || row['time'] || '';
-          const end       = row['end'] || '';
-          const client    = row['client'] || row['name'] || '';
-          const status    = row['status'] || '';
-          const id        = row['slot id'] || row['booking id'] || row['id'] || '';
-          const isBooking = !!row['booking id'] || !!row['client'];
-          return (
-            <div key={i} className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-shadow duration-300 overflow-hidden max-w-sm border-none">
-              <div className="p-6">
-                <div className="text-lg font-semibold text-gray-800">
-                  {start}{end ? ` – ${end}` : ''}{client ? ` - Session with ${client}` : ''}
-                </div>
-                <div className="flex items-center justify-end mt-3">
-                  {status && (
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${status.toLowerCase() === 'available' ? 'bg-green-100 text-green-700' :
-                        status.toLowerCase() === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-                      }`}>{status}</span>
-                  )}
-                </div>
-              </div>
-              <div className="bg-white px-6 py-4 border-t border-gray-50 flex justify-around">
-                <button onClick={() => sendMessage(`Edit ${isBooking ? 'booking' : 'slot'} ${id}`)} className="text-sm font-semibold text-gray-700 hover:text-blue-600 hover:scale-[1.05] active:scale-[0.95] transition-all duration-200">
-                  Edit {isBooking ? 'Booking' : 'Slot'}
-                </button>
-                <div className="w-[1px] h-4 bg-gray-100 self-center" />
-                <button onClick={() => sendMessage(`Delete ${isBooking ? 'booking' : 'slot'} ${id}`)} className="text-sm font-semibold text-red-500 hover:text-red-700 hover:scale-[1.05] active:scale-[0.95] transition-all duration-200">
-                  Delete {isBooking ? 'Booking' : 'Slot'}
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderHtmlTableAsCards = (tableHtml: string, key: string) => {
-    if (typeof window === 'undefined') return renderText(tableHtml, key);
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(tableHtml, 'text/html');
-    const table = doc.querySelector('table');
-
-    if (!table) return renderText(tableHtml, key);
-
-    const allRows = Array.from(table.querySelectorAll('tr'));
-    if (allRows.length < 2) return renderText(tableHtml, key);
-
-    const headerCells = Array.from(
-      allRows[0].querySelectorAll('th,td')
-    ).map((cell) => cell.textContent?.trim() || '').filter(Boolean);
-
-    if (headerCells.length === 0) return renderText(tableHtml, key);
-
-    const dataRows = allRows.slice(1).map((row) =>
-      Array.from(row.querySelectorAll('td,th')).map(
-        (cell) => cell.textContent?.trim() || ''
-      )
-    );
-
-    if (dataRows.length === 0) return renderText(tableHtml, key);
-
-    let markdownTable = `| ${headerCells.join(' | ')} |\n`;
-    markdownTable += `| ${headerCells.map(() => '---').join(' | ')} |\n`;
-
-    dataRows.forEach((row) => {
-      const paddedRow = headerCells.map((_, i) => row[i] || '');
-      markdownTable += `| ${paddedRow.join(' | ')} |\n`;
-    });
-
-    return renderTableAsCards(markdownTable, key);
-  };
-
-  const renderContent = (content: string, messageIndex: number) => {
-    if (content.includes('<table') && content.includes('</table>')) {
-      const start = content.indexOf('<table');
-      const end = content.indexOf('</table>') + '</table>'.length;
-
-      const before = content.slice(0, start);
-      const tableHtml = content.slice(start, end);
-      const after = content.slice(end);
-
-      const parts: { type: 'text' | 'table'; value: string }[] = [];
-      if (before.trim()) parts.push({ type: 'text', value: before });
-      parts.push({ type: 'table', value: tableHtml });
-      if (after.trim()) parts.push({ type: 'text', value: after });
-
-      return parts.map((part, partIndex) => {
-        const key = `msg-${messageIndex}-html-${partIndex}`;
-        if (part.type === 'table') return renderHtmlTableAsCards(part.value, key);
-        return <span key={key}>{renderText(part.value, key)}</span>;
-      });
-    }
-
-    if (content.includes('|') && content.includes('---')) {
-      const parts = content.split(/(\n?\|.*\|\n(?:\|.*\|\n?)*)/g);
-      return parts.map((part, partIndex) => {
-        const key = `msg-${messageIndex}-part-${partIndex}`;
-        if (part.trim().startsWith('|') && part.includes('---')) return renderTableAsCards(part, key);
-        return <span key={key}>{renderText(part, key)}</span>;
-      });
-    }
-    return renderText(content, `msg-${messageIndex}`);
-  };
-
   return (
-    <div 
+    <div
       className="flex flex-col h-[calc(100vh-64px)] bg-white max-w-5xl mx-auto w-full px-6 py-2 relative"
       onClick={() => inputRef.current?.focus()}
     >
-
       {/* Confirmation Modal */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
@@ -226,16 +296,10 @@ export const ChatInterface: React.FC = () => {
               This action will permanently delete the chat history. This cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
-              <button
-                onClick={handleCancelNewChat}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-              >
+              <button onClick={() => setShowConfirm(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
                 Cancel
               </button>
-              <button
-                onClick={handleConfirmNewChat}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
-              >
+              <button onClick={handleConfirmNewChat} className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">
                 Proceed
               </button>
             </div>
@@ -243,21 +307,21 @@ export const ChatInterface: React.FC = () => {
         </div>
       )}
 
-      {/* Header - Reduced padding and font size as requested */}
+      {/* Header */}
       <div className="flex justify-between items-center px-4 pb-2 border-b border-gray-100 mb-2">
         <div className="flex items-center space-x-2">
-          <div className="w-1 h-5 bg-green-500 rounded-full"></div>
+          <div className="w-1 h-5 bg-green-500 rounded-full" />
           <h2 className="text-lg font-semibold text-gray-800 tracking-tight">Mirror Assistant</h2>
         </div>
         <button
-          onClick={handleNewChatClick}
+          onClick={() => setShowConfirm(true)}
           className="text-sm text-gray-500 hover:text-blue-600 font-medium px-3 py-1 rounded-md hover:bg-blue-50 transition-colors"
         >
           + New Chat
         </button>
       </div>
 
-      {/* Messages - Tightened spacing */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 px-4">
         {messages.map((msg, index) => (
           <div key={index} className="flex flex-col">
@@ -267,13 +331,21 @@ export const ChatInterface: React.FC = () => {
               }`}>
                 {msg.role === 'user' ? getInitials(professionalName) : 'M'}
               </div>
+
               <div className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${
                 msg.role === 'user' ? 'bg-gray-100 text-gray-800' : 'text-gray-800'
               }`}>
-                {renderContent(msg.content, index)}
+                {/* Plain-text reply — bold and inline-code only, zero HTML parsing */}
+                <p>{renderText(msg.content, `msg-${index}`)}</p>
+
+                {/* Structured display — driven by metadata.display, never by reply content */}
+                {msg.role === 'assistant' && msg.metadata?.display && (
+                  <DisplayRenderer display={msg.metadata.display} onAction={handleAction} />
+                )}
               </div>
             </div>
 
+            {/* Quick-action menu on the first greeting only */}
             {msg.role === 'assistant' && index === 0 && (
               <div className="ml-11 mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl">
                 {menuOptions.map((section) => (
@@ -301,9 +373,9 @@ export const ChatInterface: React.FC = () => {
           <div className="flex items-start space-x-3">
             <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-xs font-bold">M</div>
             <div className="flex space-x-1.5 py-4 px-1">
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce"></div>
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce delay-75"></div>
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce delay-150"></div>
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce" />
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce delay-75" />
+              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-bounce delay-150" />
             </div>
           </div>
         )}
@@ -319,7 +391,7 @@ export const ChatInterface: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input - More compact vertically */}
+      {/* Input */}
       <div className="p-3 border-t border-gray-100 mt-2">
         <form onSubmit={handleSubmit} className="flex items-center space-x-3 bg-white rounded-xl px-4 py-1.5 border border-gray-200 focus-within:ring-2 focus-within:ring-blue-100 focus-within:bg-white transition-all">
           <button type="button" className="text-gray-400 hover:text-gray-600">🎤</button>
@@ -332,8 +404,6 @@ export const ChatInterface: React.FC = () => {
             className="flex-1 bg-white text-black border-none focus:ring-0 text-sm py-2 outline-none"
           />
           <div className="flex items-center space-x-3">
-            <button type="button" className="text-gray-400 hover:text-gray-600 text-lg">📎</button>
-            <button type="button" className="text-gray-400 hover:text-gray-600 text-lg">🖼️</button>
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
