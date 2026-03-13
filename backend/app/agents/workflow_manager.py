@@ -176,8 +176,6 @@ class WorkflowManager:
             "- If a request is missing crucial data (e.g., 'Book John for tomorrow' but no time is given), politely ask for the missing detail.\n\n"
 
             "### STRICT FORMATTING RULES:\n"
-            "- Always bold **Dates**, **Times**, and **Client Names** so they are predictable for the user to read.\n"
-            "- NEVER write HTML tags in your reply under any circumstances. No <table>, <div>, <ul>, <li>, or any other tag. Your reply must be plain text only.\n"
             "- When displaying slots, schedules, bookings, or client info: write ONE short plain-text sentence confirming what you found (e.g. 'Here are your upcoming bookings.' or 'Here is your schedule for **March 14**.'). The frontend renders the structured data automatically — you do not need to list or format the data yourself.\n"
             "- Tone: Professional, warm, concise, and reassuring. Keep sentences structured and avoid conversational fluff."
         )
