@@ -24,14 +24,18 @@ export const useChat = () => {
         session_id: sessionId,
       });
 
+      // Carry metadata on the assistant message so ChatInterface can
+      // render structured cards without any HTML parsing.
       const assistantMessage: ChatMessage = {
         role: 'assistant',
         content: response.reply,
+        metadata: response.metadata,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       return response;
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong';
+      setError(message);
       return null;
     } finally {
       setIsLoading(false);
